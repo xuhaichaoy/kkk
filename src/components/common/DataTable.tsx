@@ -18,6 +18,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import SplitIcon from '@mui/icons-material/AccountTree';
 import MergeIcon from '@mui/icons-material/CallMerge';
+import CompareIcon from '@mui/icons-material/Compare';
 
 interface DataTableProps {
   rows: any[];
@@ -30,11 +31,13 @@ interface DataTableProps {
   enableExport?: boolean;
   enableSplit?: boolean;
   enableMerge?: boolean;
+  enableCompare?: boolean;
   onAdd?: () => void;
   onDelete?: (selectedRows: number[]) => void;
   onExport?: () => void;
   onSplit?: () => void;
   onMerge?: () => void;
+  onCompare?: () => void;
   onRowUpdate?: (updatedRow: GridRowModel, originalRow: GridRowModel) => GridRowModel;
   pageSizeOptions?: number[];
   initialPageSize?: number;
@@ -105,11 +108,13 @@ const DataTable: React.FC<DataTableProps> = ({
   enableExport = false,
   enableSplit = false,
   enableMerge = false,
+  enableCompare = false,
   onAdd,
   onDelete,
   onExport,
   onSplit,
   onMerge,
+  onCompare,
   onRowUpdate,
   pageSizeOptions = [10, 25, 50, 100],
   initialPageSize = 10
@@ -141,7 +146,7 @@ const DataTable: React.FC<DataTableProps> = ({
 
   return (
     <Box sx={{ height, width: '100%', position: 'relative' }}>
-      {(enableAdd || enableDelete || enableExport || enableSplit || enableMerge) && (
+      {(enableAdd || enableDelete || enableExport || enableSplit || enableMerge || enableCompare) && (
         <MuiToolbar 
           sx={[
             {
@@ -233,6 +238,20 @@ const DataTable: React.FC<DataTableProps> = ({
                     }}
                   >
                     <MergeIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+              
+              {enableCompare && onCompare && (
+                <Tooltip title="差异对比" arrow>
+                  <IconButton
+                    onClick={onCompare}
+                    sx={{
+                      color: 'primary.main',
+                      '&:hover': { backgroundColor: 'action.hover' },
+                    }}
+                  >
+                    <CompareIcon />
                   </IconButton>
                 </Tooltip>
               )}

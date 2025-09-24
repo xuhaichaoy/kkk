@@ -11,6 +11,7 @@ export { default as CustomTabs } from './CustomTabs';
 export { default as FileInfo } from './FileInfo';
 export { default as SplitTableDialog } from './SplitTableDialog';
 export { default as MergeSheetsDialog } from './MergeSheetsDialog';
+export { default as CompareSheetsDialog } from './CompareSheetsDialog';
 
 // 类型定义
 export type { TabItem } from './CustomTabs';

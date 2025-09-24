@@ -4,7 +4,7 @@ import {
   Typography, 
   Tooltip
 } from '@mui/material';
-import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog } from '../common';
+import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog, CompareSheetsDialog } from '../common';
 import { 
   SheetData, 
   EditedRowData,
@@ -29,6 +29,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
   const [error, setError] = useState<string | null>(null);
   const [splitDialogOpen, setSplitDialogOpen] = useState(false);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
 
   // 初始化编辑数据，从本地存储加载
   const [editedRows, setEditedRows] = useState<EditedRowData>(() => {
@@ -155,6 +156,15 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
       setError(err instanceof Error ? err.message : '合并失败');
     }
   }, [sheets]);
+
+  // 差异对比功能
+  const handleCompareSheets = useCallback(() => {
+    setCompareDialogOpen(true);
+  }, []);
+
+  const handleCloseCompareDialog = useCallback(() => {
+    setCompareDialogOpen(false);
+  }, []);
 
   // 导出功能
   const handleExport = useCallback(() => {
@@ -326,11 +336,13 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
           enableExport={true}
           enableSplit={true}
           enableMerge={sheets.length >= 2}
+          enableCompare={sheets.length >= 2}
           onAdd={handleAddRow}
           onDelete={handleDeleteRows}
           onExport={handleExport}
           onSplit={handleSplitTable}
           onMerge={handleMergeSheets}
+          onCompare={handleCompareSheets}
           onRowUpdate={(updatedRow, originalRow) => {
             const sheetId = `${index}_${updatedRow.id}`;
                   const changedField = Object.keys(updatedRow).find(
@@ -380,6 +392,13 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
         onClose={handleCloseMergeDialog}
         onConfirm={handleConfirmMerge}
         sheets={sheets}
+      />
+      
+      <CompareSheetsDialog
+        open={compareDialogOpen}
+        onClose={handleCloseCompareDialog}
+        sheets={sheets}
+        editedRows={editedRows}
       />
     </Box>
   );
