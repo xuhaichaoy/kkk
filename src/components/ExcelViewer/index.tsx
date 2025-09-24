@@ -4,7 +4,7 @@ import {
   Typography, 
   Tooltip
 } from '@mui/material';
-import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog } from '../common';
+import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog } from '../common';
 import { 
   SheetData, 
   EditedRowData,
@@ -13,7 +13,8 @@ import {
   saveEditedData,
   formatCellValue,
   splitTableByColumn,
-  exportToCSV
+  exportToCSV,
+  mergeSheets
 } from '../../utils/excelUtils';
 
 interface ExcelViewerProps {
@@ -27,6 +28,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
 
   // 初始化编辑数据，从本地存储加载
   const [editedRows, setEditedRows] = useState<EditedRowData>(() => {
@@ -123,7 +125,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     if (!currentSheetData) return;
 
     const columnIndex = parseInt(columnField);
-    const newSheets = splitTableByColumn(currentSheetData, columnIndex, currentSheet, editedRows);
+    const newSheets = splitTableByColumn(currentSheetData, columnIndex, currentSheet, editedRows, sheets);
     
     if (newSheets.length === 0) {
       setError('该列没有有效数据用于拆分');
@@ -134,6 +136,25 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     setSheets(prev => [...prev, ...newSheets]);
     setSplitDialogOpen(false);
   }, [sheets, currentSheet, editedRows]);
+
+  // 合并表格功能
+  const handleMergeSheets = useCallback(() => {
+    setMergeDialogOpen(true);
+  }, []);
+
+  const handleCloseMergeDialog = useCallback(() => {
+    setMergeDialogOpen(false);
+  }, []);
+
+  const handleConfirmMerge = useCallback((selectedSheets: SheetData[], mergedSheetName: string) => {
+    try {
+      const mergedSheet = mergeSheets(selectedSheets, mergedSheetName, sheets);
+      setSheets(prev => [...prev, mergedSheet]);
+      setMergeDialogOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '合并失败');
+    }
+  }, [sheets]);
 
   // 导出功能
   const handleExport = useCallback(() => {
@@ -304,10 +325,12 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
           enableDelete={true}
           enableExport={true}
           enableSplit={true}
+          enableMerge={sheets.length >= 2}
           onAdd={handleAddRow}
           onDelete={handleDeleteRows}
           onExport={handleExport}
           onSplit={handleSplitTable}
+          onMerge={handleMergeSheets}
           onRowUpdate={(updatedRow, originalRow) => {
             const sheetId = `${index}_${updatedRow.id}`;
                   const changedField = Object.keys(updatedRow).find(
@@ -350,6 +373,13 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
         sheetData={sheets[currentSheet] || null}
         currentSheet={currentSheet}
         editedRows={editedRows}
+      />
+      
+      <MergeSheetsDialog
+        open={mergeDialogOpen}
+        onClose={handleCloseMergeDialog}
+        onConfirm={handleConfirmMerge}
+        sheets={sheets}
       />
     </Box>
   );

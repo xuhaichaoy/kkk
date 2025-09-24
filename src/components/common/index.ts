@@ -10,6 +10,7 @@ export { default as DataTable } from './DataTable';
 export { default as CustomTabs } from './CustomTabs';
 export { default as FileInfo } from './FileInfo';
 export { default as SplitTableDialog } from './SplitTableDialog';
+export { default as MergeSheetsDialog } from './MergeSheetsDialog';
 
 // 类型定义
 export type { TabItem } from './CustomTabs';

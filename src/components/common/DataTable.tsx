@@ -17,6 +17,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import SplitIcon from '@mui/icons-material/AccountTree';
+import MergeIcon from '@mui/icons-material/CallMerge';
 
 interface DataTableProps {
   rows: any[];
@@ -28,10 +29,12 @@ interface DataTableProps {
   enableDelete?: boolean;
   enableExport?: boolean;
   enableSplit?: boolean;
+  enableMerge?: boolean;
   onAdd?: () => void;
   onDelete?: (selectedRows: number[]) => void;
   onExport?: () => void;
   onSplit?: () => void;
+  onMerge?: () => void;
   onRowUpdate?: (updatedRow: GridRowModel, originalRow: GridRowModel) => GridRowModel;
   pageSizeOptions?: number[];
   initialPageSize?: number;
@@ -101,10 +104,12 @@ const DataTable: React.FC<DataTableProps> = ({
   enableDelete = false,
   enableExport = false,
   enableSplit = false,
+  enableMerge = false,
   onAdd,
   onDelete,
   onExport,
   onSplit,
+  onMerge,
   onRowUpdate,
   pageSizeOptions = [10, 25, 50, 100],
   initialPageSize = 10
@@ -136,7 +141,7 @@ const DataTable: React.FC<DataTableProps> = ({
 
   return (
     <Box sx={{ height, width: '100%', position: 'relative' }}>
-      {(enableAdd || enableDelete || enableExport || enableSplit) && (
+      {(enableAdd || enableDelete || enableExport || enableSplit || enableMerge) && (
         <MuiToolbar 
           sx={[
             {
@@ -214,6 +219,20 @@ const DataTable: React.FC<DataTableProps> = ({
                     }}
                   >
                     <SplitIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+              
+              {enableMerge && onMerge && (
+                <Tooltip title="合并表格" arrow>
+                  <IconButton
+                    onClick={onMerge}
+                    sx={{
+                      color: 'primary.main',
+                      '&:hover': { backgroundColor: 'action.hover' },
+                    }}
+                  >
+                    <MergeIcon />
                   </IconButton>
                 </Tooltip>
               )}

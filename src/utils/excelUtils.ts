@@ -94,13 +94,35 @@ export const getColumnUniqueValues = (
 };
 
 /**
+ * 生成唯一的sheet名称
+ */
+export const generateUniqueSheetName = (baseName: string, existingSheets: SheetData[]): string => {
+  const existingNames = new Set(existingSheets.map(sheet => sheet.name));
+  
+  if (!existingNames.has(baseName)) {
+    return baseName;
+  }
+  
+  let counter = 1;
+  let uniqueName = `${baseName}_${counter}`;
+  
+  while (existingNames.has(uniqueName)) {
+    counter++;
+    uniqueName = `${baseName}_${counter}`;
+  }
+  
+  return uniqueName;
+};
+
+/**
  * 根据列值拆分表格数据
  */
 export const splitTableByColumn = (
   sheetData: SheetData,
   columnIndex: number,
   currentSheet: number,
-  editedRows: EditedRowData
+  editedRows: EditedRowData,
+  existingSheets: SheetData[]
 ): SheetData[] => {
   const headers = sheetData.data[0];
   const dataRows = sheetData.data.slice(1);
@@ -110,13 +132,110 @@ export const splitTableByColumn = (
   
   return uniqueValues.map(value => {
     const filteredRows = rowsWithEdits.filter(row => row[columnIndex]?.toString() === value);
+    const baseName = `${sheetData.name}_${value}`;
+    const uniqueName = generateUniqueSheetName(baseName, existingSheets);
+    
     return {
-      name: `${sheetData.name}_${value}`,
+      name: uniqueName,
       data: [headers, ...filteredRows],
       totalRows: filteredRows.length,
       totalCols: headers.length
     };
   });
+};
+
+/**
+ * 分析要合并的sheets，返回列差异信息
+ */
+export interface MergeAnalysis {
+  allColumns: string[];
+  newColumns: string[];
+  existingColumns: string[];
+  sheetColumnMapping: { [sheetName: string]: string[] };
+}
+
+export const analyzeSheetsForMerge = (sheets: SheetData[]): MergeAnalysis => {
+  if (sheets.length === 0) {
+    return {
+      allColumns: [],
+      newColumns: [],
+      existingColumns: [],
+      sheetColumnMapping: {}
+    };
+  }
+
+  // 获取第一个sheet的列作为基准
+  const baseColumns = sheets[0].data[0] || [];
+  const baseColumnSet = new Set(baseColumns);
+  const allColumnsSet = new Set(baseColumns);
+  const sheetColumnMapping: { [sheetName: string]: string[] } = {};
+
+  // 收集所有sheet的列信息
+  sheets.forEach(sheet => {
+    const sheetColumns = sheet.data[0] || [];
+    sheetColumnMapping[sheet.name] = sheetColumns;
+    sheetColumns.forEach(col => allColumnsSet.add(col));
+  });
+
+  const allColumns = Array.from(allColumnsSet);
+  const newColumns = allColumns.filter(col => !baseColumnSet.has(col));
+
+  return {
+    allColumns,
+    newColumns,
+    existingColumns: baseColumns,
+    sheetColumnMapping
+  };
+};
+
+/**
+ * 合并多个sheets
+ */
+export const mergeSheets = (
+  sheets: SheetData[],
+  mergedSheetName: string,
+  existingSheets: SheetData[]
+): SheetData => {
+  if (sheets.length === 0) {
+    throw new Error('没有选择要合并的sheet');
+  }
+
+  const analysis = analyzeSheetsForMerge(sheets);
+  const { allColumns } = analysis;
+
+  // 创建合并后的数据
+  const mergedData: any[][] = [allColumns]; // 表头
+
+  // 合并每个sheet的数据
+  sheets.forEach(sheet => {
+    const sheetHeaders = sheet.data[0] || [];
+    const sheetRows = sheet.data.slice(1);
+
+    // 为每一行数据创建完整的行
+    sheetRows.forEach(row => {
+      const mergedRow = new Array(allColumns.length).fill('');
+      
+      // 根据列名映射数据
+      sheetHeaders.forEach((header, index) => {
+        const targetIndex = allColumns.indexOf(header);
+        if (targetIndex !== -1 && row[index] !== undefined) {
+          mergedRow[targetIndex] = row[index];
+        }
+      });
+
+      mergedData.push(mergedRow);
+    });
+  });
+
+  // 生成唯一的sheet名称
+  const uniqueName = generateUniqueSheetName(mergedSheetName, existingSheets);
+
+  return {
+    name: uniqueName,
+    data: mergedData,
+    totalRows: mergedData.length - 1,
+    totalCols: allColumns.length
+  };
 };
 
 /**
