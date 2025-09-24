@@ -107,11 +107,18 @@ const DataTable: React.FC<DataTableProps> = ({
   const [selectedRows, setSelectedRows] = useState<any[]>([]);
 
   const handleSelectionChange = useCallback((newSelection: GridRowSelectionModel) => {
-    console.log('Selection changed:', newSelection);
-    // GridRowSelectionModel 是一个包含 ids 属性的对象
-    const selectedIds = newSelection?.ids ? Array.from(newSelection.ids) : [];
-    setSelectedRows(selectedIds);
-  }, []);
+    if (newSelection.type === 'include') {
+      const selectedIds = Array.from(newSelection.ids || []);
+      setSelectedRows(selectedIds);
+    } else if (newSelection.type === 'exclude') {
+      const allRowIds = rows.map(row => row.id);
+      const excludeIds = new Set(newSelection.ids || []);
+      const selectedIds = allRowIds.filter(id => !excludeIds.has(id));
+      setSelectedRows(selectedIds);
+    } else {
+      setSelectedRows([]);
+    }
+  }, [rows]);
 
   const handleDeleteRows = useCallback(() => {
     const selectedIds = Array.isArray(selectedRows) ? selectedRows : [];
@@ -123,7 +130,6 @@ const DataTable: React.FC<DataTableProps> = ({
 
   return (
     <Box sx={{ height, width: '100%', position: 'relative' }}>
-      {/* 独立工具栏 - 参考demo.tsx的实现 */}
       {(enableAdd || enableDelete || enableExport) && (
         <MuiToolbar 
           sx={[
