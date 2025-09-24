@@ -1,0 +1,47 @@
+{
+  "name": "tauri-app-template",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --force && tsr watch",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "lint": "biome check src/**/*",
+    "lint:fix": "biome check --apply src/**/*",
+    "tanstack-router-dev": "tsr watch"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@fontsource-variable/plus-jakarta-sans": "^5.2.6",
+    "@mui/icons-material": "^7.3.2",
+    "@mui/material": "7.2.0",
+    "@mui/x-data-grid": "^8.11.3",
+    "@tanstack/react-router": "^1.123.2",
+    "@tanstack/router-devtools": "^1.123.2",
+    "@tauri-apps/api": "2.6.0",
+    "@types/node": "^24.0.8",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "jotai": "^2.14.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-virtualized": "^9.22.6",
+    "react-window": "^2.1.1",
+    "typescript": "^5.8.3",
+    "xlsx-js-style": "^1.2.0"
+  },
+  "devDependencies": {
+    "@babel/plugin-proposal-optional-chaining-assign": "^7.18.9",
+    "@biomejs/biome": "^2.0.6",
+    "@tanstack/router-cli": "^1.123.2",
+    "@tanstack/router-vite-plugin": "^1.123.2",
+    "@tauri-apps/cli": "2.6.2",
+    "@vitejs/plugin-react": "^4.6.0",
+    "sass": "^1.89.2",
+    "vite": "^7.0.0"
+  },
+  "license": "MIT"
+}

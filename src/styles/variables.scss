@@ -1,0 +1,36 @@
+
+$clr-accent-default: hsl(337, 96%, 56%);
+$clr-accent-light: hsl(337, 96%, 90%);
+$clr-accent-dark: hsl(337, 96%, 20%);
+$clr-secondary-default: hsl(273, 100%, 36%);
+$clr-secondary-dark: hsl(273, 100%, 12%);
+$clr-background-default: hsl(256, 100%, 6%);
+$clr-background-opacity-0_5: hsl(256, 100%, 6%, 50%);
+
+$clr-background-dark: hsl(256, 100%, 4%);
+$clr-background-dark-opacity-0_8: hsl(256, 100%, 4%, 94%);
+$clr-background-light: hsl(256, 100%, 16%);
+
+$clr-gradient-default: linear-gradient(
+	135deg,
+	$clr-accent-default,
+	$clr-secondary-default
+);
+$clr-gradient-dark: linear-gradient(
+	135deg,
+	$clr-accent-dark,
+	$clr-secondary-dark
+);
+
+$border-radius-default: 8px;
+$border-radius_04: 4px;
+
+$transition-time-default: 250ms;
+$transition-time-fast: 150ms;
+
+$shadow-card: 0 4px 12px rgb(0 0 0 / 0.4);
+$shadow-card-image: 0 2px 8px rgb(0 0 0 / 0.25);
+
+$clr-background-card-icon: linear-gradient(45deg, rgb(255 255 255 / 0.05), rgb(255 255 255 / 0.2));
+
+$page-margin: 4em;

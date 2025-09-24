@@ -1,0 +1,232 @@
+- # Alpha 3 (11/12/2024)
+    - refactor: prepare for alpha 3
+    - refactor: cleanup
+    - refactor: remove unused imports
+    - fix: series page not fetching correct season
+    - feat: add key binding for macos users #435
+    - refactor: remove jellyPlayer naming from code #460
+    - feat: add playlist playback support
+    - refactor: improve server add process
+    - feat: show current time while scrubbing video progress #339
+    - style: increase the sharpness of card images
+    - feat: add skip recap button
+    - refactor: cleanup video player
+    - feat: add chapter navigation buttons to video player #457
+    - feat: allow changing audio track from video player
+    - feat: allow changing chapters from a chapter list #457
+    - refactor: cleanup search route
+    - refactor: cleanup some components
+    - refactor: unmount card image if not inView
+    - refactor: cleanup person route
+    - style: replace noto-sans with plus-jakarta-sans
+    - refactor: cleanup login routes
+    - fix: library items not of same size #380
+    - refactor: cleanup item.tsx
+    - fix: series page breaking if season is not loaded
+    - fix: do not display missing items in series
+    - refactor: move more files to ts
+    - refactor: move more files to ts
+    - refactor: move more files to ts
+    - refactor: move more files to typescript
+    - refactor: move more components to ts
+    - refactore: cleanup __root.tsx
+    - chore(deps): update dependencies
+    - fix: collections page not rendering #447
+    - fix: quick connect not working #445
+    - fix: playback error if subtitle is not set
+    - fix: index not being assigned proper value #420
+    - fix: synced lyrics not working
+    - Merge pull request #446 from prayag17/renovate/node-22.x-lockfile
+    - refactor: use saved lyrics
+    - refactor: change GenreView to genreFilter
+    - fix(deps): update dependency @types/node to v22.10.1
+    - Merge pull request #393 from prayag17/renovate/tanstack-router-monorepo
+    - Merge pull request #424 from prayag17/renovate/tanstack-query-monorepo
+    - fix(deps): update tanstack-router monorepo
+    - Merge pull request #426 from prayag17/renovate/node-22.x-lockfile
+    - fix(deps): update dependency @types/node to v22.10.0
+    - Merge pull request #437 from prayag17/dependabot/cargo/src-tauri/rustls-0.23.18
+    - fix(deps): update tanstack-query monorepo to v5.61.4
+    - Merge pull request #438 from prayag17/renovate/axios-1.x-lockfile
+    - Merge pull request #439 from prayag17/renovate/vitejs-plugin-react-4.x-lockfile
+    - chore(deps): update dependency @vitejs/plugin-react to v4.3.4
+    - refactore: move more components to typescript
+    - fix: episode and series not playing if episode is not present in nextUp and continueWatching
+    - feat: show current episode in PlayButton
+    - fix: episode indexing for absolute numbering indexNumbers in PlayButton
+    - fix: unable to read Id of undefined in PlayButton
+    - fix(deps): update dependency axios to v1.7.8
+    - chore(deps): bump rustls from 0.23.16 to 0.23.18 in /src-tauri
+    - fix(ci): not uploading debug builds
+    - refactor(ci): build debug builds in CI
+    - Merge pull request #425 from prayag17/renovate/serde_json-1.x-lockfile
+    - Merge pull request #436 from sambartik/macos-universal-dmg
+    - chore(deps): update dependencies
+    - refactor: convert more files to typescript
+    - fix: improper handling of undefined api leading to crashes
+    - refactor: move all buttons to tsx #338
+    - Add universal dmg for macOS in release job
+    - fix: audio queue not moving after 2 changes #182
+    - fix: playing track from album not updating the queue #182
+    - refactor: use MediaSegments api for intro/outro skipping
+    - fix: trickplay images not showing up
+    - refactor: improve login page UI #338 #202
+    - chore(release): update latest.json
+    - fix(deps): update rust crate serde_json to v1.0.133
+
+- # 0.0.7-dev (20/11/2024)
+    - chore(deps): update dependencies
+    - refactor: change UI of login/list and fix Api not being defined in context
+    - fix: player/audio route not able to interact with audioPlayer
+    - fix: audio player info not visible
+    - fix: audio player not playing audio
+    - fix: toggling ssubtitles not working
+    - fix: subtitles not being rendered #401
+    - fix: hero carousel indicators not scrolling
+    - fix: vite build error for safari13
+    - fix: blink not launching or rendering on opening
+    - Merge branch 'main' of https://github.com/prayag17/JellyPlayer
+    - chore(deps): update dependencies
+    - Merge pull request #410 from prayag17/renovate/tauri-plugin-notification-2.x-lockfile
+    - Merge pull request #409 from Blackspirits/patch-1
+    - chore(deps): update dependencies
+    - (origin/renovate/tauri-plugin-notification-2.x-lockfile) fix(deps): update rust crate tauri-plugin-notification to v2.0.1  
+    - feat: allow downloading images from ImageViewer
+    - Update index.tsx
+    - feat: implement basic image viewer #338 #240
+    - fix: react infinite depth error
+    - fix: vite config
+    - refactor: remove @million/js and @million/lint
+    - refactor: remove Cargo.lock from .gitignore #400
+    - chore(deps): update dependencies
+    - refactor: code cleanup
+    - fix: bug_report showing extra fields
+    - refactor: remove redundant calls for getCurrentUser
+    - feat: show queue item from currently playing item in queueButton
+    - chore(deps): update dependencies
+    - feat: remember library filters #192
+    - Merge pull request #370 from prayag17/renovate/tauri-apps-plugin-clipboard-manager-2.x
+    - fix(deps): update dependency @tauri-apps/plugin-clipboard-manager to v2.1.0-beta.6
+    - Merge pull request #381 from prayag17/renovate/wavesurfer.js-7.x-lockfile
+    - Merge pull request #342 from prayag17/renovate/tanstack-router-monorepo
+    - Merge pull request #368 from prayag17/renovate/tauri-monorepo
+    - chore(release): update latest.json
+
+- # 0.0.6-dev (9/7/2024)
+    > **Note** : This is an unstable release
+    - feat: add video player slider bubble theming #337
+    - feat: add trickplay support #338 #337
+    - fix(ci): update env variables
+    - fix(ci): fix ubuntu build failing
+    - chore(deps): update js and rust deps
+    - feat: add chapter markers #337
+    - feat: add subtitle support #337
+    - fix(ci): invalid tauri build command
+    - fix(ci):workflow repo name
+    - feat: remember last search query
+    - feat: add new audioPlayer route and allow reordering queue
+    - chore(deps): update deps
+    - chore(deps): cleanup unused dependencies and update dependencies
+    - refactor: replace wavesurfer with html audio player
+    - feat: add new album page
+    - fix: quick connect not working
+    - chore: change tauri updater signing keys
+    - feat: show upNext card for episode items in player
+    - fix: login page not working
+    - Merge pull request #332 from pypp/feat/double-click-fullscreen
+    - Merge pull request #333 from pypp/feat/scrollwheel-volume-control
+    - fix: removed subtitleRenderer state that was added while merging
+    - fix: fixed bug caused by merge econflicts
+    - Merge remote-tracking branch 'upstream/main' into feat/scrollwheel-volume-control
+    - fix: fixed fucntion to use the new API
+    - Merge remote-tracking branch 'upstream/main' into feat/double-click-fullscreen
+    - Merge branch 'main' of https://github.com/pypp/JellyPlayer into feat/double-click-fullscreen
+    - fix(deps): update dependency babel-plugin-react-compiler to v0.0.0
+    - fix(deps): update tauri monorepo
+    - chore(deps): update dependencies
+    - feat: allow toggling subtitles on and off from player
+    - fix: playNext and playPrevious logic
+    - feat: add intro-skipper
+    - refactor: cleanup unused variables in playbackStore
+    - chore(deps): update packages
+    - refactor: support vtt and ass subtitles
+    - refactor: add sorting options to library page for Series and BoxSets
+    - style: update hero-carousel styling
+    - chore(deps): update deps
+    - fix(deps): update dependency framer-motion to v11.2.9
+    - refactor: move most routing logic to tanstack
+    - refactor: implement new login logic and verify context.api status
+    - chore(deps): update dependencies
+    - refactor: move to tanstack router
+    - fix: videoPlayer not restoring playback position when queueItem is updated
+    - fix: Slight UI regression when changing servers on latest version #288
+    - fix: eac3 codec support
+    - refactor: queueItem playback
+    - fix(deps): update rust crate tauri to 1.6.2 (#298)
+    - fix: episode playback
+    - feat: add queueButton
+    - Merge branch 'main' of https://github.com/prayag17/JellyPlayer
+    - chore(deps): fix vite 5.2 bundle
+    - fix(deps): update dependency @types/react to v18.3.1 (#295)
+    - fix: scrollTrigger in libraryView
+    - style: improve styling
+    - fix: backdrop flashing
+    - feat: use tanstack virtual for rendering library items
+    - style: improve login notice ui
+    - refactor: fetch mediaSource for series
+    - refactor: implement new playback method for playbutton (wip)
+    - ui: improve glass texture
+    - ui: implement new appBar #284
+    - feat: display sdr and hdr only videoRange
+    - style: improve hdr10 logo spacing
+    - chore: update title-movie screenshot in README.md
+    - chore: update title-movie.png
+    - fix: hdr10 icon height not matching
+    - style: update mediainfo icons
+    - style: update mediainfo icons
+    - fix: no subtitle option not selecting
+    - feat: use brand logo for hdr10plus
+    - fix: default subtitle not being selected properly
+    - style: display backdrops in boxset
+    - fix: videoPlayer not exiting if subtitles are disabled
+    - chore: add kitsu icon to iconLink
+    - fix: carousel not rendering
+    - chore: update readme
+    - chore: update screenshots
+    - fix: improve hdr10+ detection
+    - feat: add quality and audio brand labels
+    - style: improve page-margin
+    - fix(player): unable to play media without subtitles
+    - fix: album not displaying if no parent backdrop is found
+    - chore: add screenshots and some features of JellyPlayer #242
+    - chore: upload screenshots
+    - fix(nsis): nsis setup images not displaying correctly
+    - style: Improve titlePage styling
+    - style: change cardText styling
+    - style: Improve overall app component paddings and margins and rollback vite to 5.1.6
+    - chore(deps): update dependency vite to v5.2.6 (#286)
+    - fix(deps): update material-ui monorepo (#270)
+    - fix(deps): update dependency @types/node to v20.11.29 (#292)
+    - fix(deps): update dependency @types/react to v18.2.67 (#293)
+    - fix(deps): update tanstack-query monorepo to v5.28.6 (#271)
+    - fix(deps): update dependency @types/react to v18.2.67 (#272)
+    - fix(deps): update dependency @types/node to v20.11.29 (#274)
+    - fix(deps): update dependency framer-motion to v11.0.15 (#278)
+    - fix(deps): update dependency typescript to v5.4.3 (#287)
+    - fix(deps): update dependency material-symbols to v0.17.1 (#289)
+    - chore(deps): update dependency @biomejs/biome to v1.6.2 (#290)
+    - fix(deps): update rust crate log to ^0.4.21 (#276)
+    - chore: update latest.json
+
+- # v0.0.5-dev
+    > **Note** : This is an unstable release
+    - feat(web): Add new About page (#258) by @prayag17
+    - feat(web): Allow managing servers from settings dialog by @prayag17
+    - feat(search): Add Episode to search by @prayag17
+    - feat(settings-server): Add a refretch button by @prayag17
+    - feat(web): Add a global query fetch/mutation status by @prayag17
+    - fix(server): Use redirect instead of relaunch when changing or deleting a server by @prayag17
+    - refactor(player): Rewrite and improve video playback by @prayag17
+    - feat(web): Use season backdrop in series page if available by @prayag17
+    - feat(player): Allow selecting subtitles during playback by @prayag17
+    - feat(ui): Add new episode layout by @prayag17
