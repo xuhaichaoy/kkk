@@ -16,6 +16,7 @@ import { styled } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
+import SplitIcon from '@mui/icons-material/AccountTree';
 
 interface DataTableProps {
   rows: any[];
@@ -26,9 +27,11 @@ interface DataTableProps {
   enableAdd?: boolean;
   enableDelete?: boolean;
   enableExport?: boolean;
+  enableSplit?: boolean;
   onAdd?: () => void;
   onDelete?: (selectedRows: number[]) => void;
   onExport?: () => void;
+  onSplit?: () => void;
   onRowUpdate?: (updatedRow: GridRowModel, originalRow: GridRowModel) => GridRowModel;
   pageSizeOptions?: number[];
   initialPageSize?: number;
@@ -97,9 +100,11 @@ const DataTable: React.FC<DataTableProps> = ({
   enableAdd = false,
   enableDelete = false,
   enableExport = false,
+  enableSplit = false,
   onAdd,
   onDelete,
   onExport,
+  onSplit,
   onRowUpdate,
   pageSizeOptions = [10, 25, 50, 100],
   initialPageSize = 10
@@ -128,9 +133,10 @@ const DataTable: React.FC<DataTableProps> = ({
   }, [selectedRows, onDelete]);
 
 
+
   return (
     <Box sx={{ height, width: '100%', position: 'relative' }}>
-      {(enableAdd || enableDelete || enableExport) && (
+      {(enableAdd || enableDelete || enableExport || enableSplit) && (
         <MuiToolbar 
           sx={[
             {
@@ -194,6 +200,20 @@ const DataTable: React.FC<DataTableProps> = ({
                     }}
                   >
                     <AddIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+              
+              {enableSplit && onSplit && (
+                <Tooltip title="拆分表格" arrow>
+                  <IconButton
+                    onClick={onSplit}
+                    sx={{
+                      color: 'primary.main',
+                      '&:hover': { backgroundColor: 'action.hover' },
+                    }}
+                  >
+                    <SplitIcon />
                   </IconButton>
                 </Tooltip>
               )}

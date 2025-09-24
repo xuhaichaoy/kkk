@@ -2,7 +2,17 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { 
   Box, 
   Typography, 
-  Tooltip
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem
 } from '@mui/material';
 import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem } from '../common';
 
@@ -23,6 +33,9 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
   const [currentSheet, setCurrentSheet] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+  const [selectedColumnField, setSelectedColumnField] = useState<string>('');
+  const [columnUniqueValues, setColumnUniqueValues] = useState<string[]>([]);
 
   // 从本地存储加载编辑数据
   const loadEditedData = useCallback((fileId: string) => {
@@ -51,6 +64,11 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     if (!file) return '';
     return `${file.name}_${file.size}_${file.lastModified}`;
   }, []);
+
+  // 初始化编辑数据，从本地存储加载
+  const [editedRows, setEditedRows] = useState<{ [key: string]: { [key: string]: any } }>(() => {
+    return loadEditedData(getFileId(file));
+  });
 
   // 删除选中的行
   const handleDeleteRows = useCallback((selectedRowIndexes: number[]) => {
@@ -128,6 +146,76 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     setSheets(newData);
   }, [sheets, currentSheet]);
 
+  const handleSplitTable = useCallback(() => {
+    setSplitDialogOpen(true);
+  }, []);
+
+  const handleCloseSplitDialog = useCallback(() => {
+    setSplitDialogOpen(false);
+    setSelectedColumnField('');
+    setColumnUniqueValues([]);
+  }, []);
+
+  const handleColumnChange = useCallback((columnField: string) => {
+    setSelectedColumnField(columnField);
+    
+    if (columnField && sheets[currentSheet]?.data.length > 1) {
+      const currentSheetData = sheets[currentSheet];
+      const columnIndex = parseInt(columnField);
+      const dataRows = currentSheetData.data.slice(1);
+      
+      const uniqueValues = [...new Set(dataRows.map((row, rowIndex) => {
+        const sheetId = `${currentSheet}_${rowIndex}`;
+        const editedRowData = editedRows[sheetId] || {};
+        const cellValue = editedRowData[String(columnIndex)] || row[columnIndex];
+        return cellValue?.toString() || '';
+      }))].filter(val => val !== '');
+      
+      setColumnUniqueValues(uniqueValues);
+    } else {
+      setColumnUniqueValues([]);
+    }
+  }, [sheets, currentSheet, editedRows]);
+
+  const confirmSplitTable = useCallback(() => {
+    if (!selectedColumnField) return;
+
+    const currentSheetData = sheets[currentSheet];
+    if (!currentSheetData || !currentSheetData.data.length) return;
+
+    const headers = currentSheetData.data[0];
+    const columnIndex = parseInt(selectedColumnField);
+    const dataRows = currentSheetData.data.slice(1);
+
+    const rowsWithEdits = dataRows.map((row, rowIndex) => {
+      const sheetId = `${currentSheet}_${rowIndex}`;
+      const editedRowData = editedRows[sheetId] || {};
+      return row.map((cell, cellIndex) => editedRowData[String(cellIndex)] || cell);
+    });
+
+    const uniqueValues = [...new Set(rowsWithEdits.map(row => row[columnIndex]?.toString() || ''))].filter(val => val !== '');
+
+    if (uniqueValues.length === 0) {
+      setError('该列没有有效数据用于拆分');
+      setSplitDialogOpen(false);
+      return;
+    }
+
+    const newSheets: SheetData[] = uniqueValues.map(value => {
+      const filteredRows = rowsWithEdits.filter(row => row[columnIndex]?.toString() === value);
+      return {
+        name: `${currentSheetData.name}_${value}`,
+        data: [headers, ...filteredRows],
+        totalRows: filteredRows.length,
+        totalCols: headers.length
+      };
+    });
+
+    const updatedSheets = [...sheets, ...newSheets];
+    setSheets(updatedSheets);
+    setSplitDialogOpen(false);
+  }, [selectedColumnField, sheets, currentSheet, editedRows]);
+
   // 导出功能
   const handleExport = useCallback(() => {
     if (!sheets.length) return;
@@ -157,11 +245,6 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     link.click();
     document.body.removeChild(link);
   }, [sheets, currentSheet]);
-
-  // 初始化编辑数据，从本地存储加载
-  const [editedRows, setEditedRows] = useState<{ [key: string]: { [key: string]: any } }>(() => {
-    return loadEditedData(getFileId(file));
-  });
 
   const processExcel = useCallback(async (file: File) => {
     setLoading(true);
@@ -339,9 +422,11 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
           enableAdd={true}
           enableDelete={true}
           enableExport={true}
+          enableSplit={true}
           onAdd={handleAddRow}
           onDelete={handleDeleteRows}
           onExport={handleExport}
+          onSplit={handleSplitTable}
           onRowUpdate={(updatedRow, originalRow) => {
             const sheetId = `${index}_${updatedRow.id}`;
                   const changedField = Object.keys(updatedRow).find(
@@ -376,6 +461,93 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
         value={currentSheet}
         onChange={handleSheetChange}
       />
+      
+      {/* 拆分表格确认对话框 */}
+      <Dialog
+        open={splitDialogOpen}
+        onClose={handleCloseSplitDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>拆分表格</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            请选择要用于拆分的列
+          </Alert>
+          <FormControl fullWidth sx={{ mt: 2 }}>
+            <InputLabel>选择列</InputLabel>
+            <Select
+              value={selectedColumnField}
+              onChange={(e) => handleColumnChange(e.target.value)}
+              label="选择列"
+            >
+              {sheets[currentSheet]?.data[0]?.map((header: string, index: number) => (
+                <MenuItem key={index} value={String(index)}>
+                  {header || `列 ${index + 1}`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          
+          {columnUniqueValues.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity="success" sx={{ mb: 1 }}>
+                检测到 {columnUniqueValues.length} 个唯一值
+              </Alert>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                将创建以下工作表：
+              </Typography>
+              <Box sx={{ 
+                display: 'flex', 
+                flexWrap: 'wrap', 
+                gap: 1,
+                maxHeight: 120,
+                overflow: 'auto',
+                p: 1,
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1,
+                backgroundColor: 'background.default'
+              }}>
+                {columnUniqueValues.map((value, index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      px: 1.5,
+                      py: 0.5,
+                      backgroundColor: 'primary.main',
+                      color: 'primary.contrastText',
+                      borderRadius: 1,
+                      fontSize: '0.75rem',
+                      fontWeight: 500
+                    }}
+                  >
+                    {value}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+          
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            系统将自动检测该列的所有唯一值，并为每个值创建一个新的工作表。
+            拆分后的表格将保持原有的表头、样式和公式。
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseSplitDialog}>
+            取消
+          </Button>
+          <Button 
+            onClick={confirmSplitTable} 
+            variant="contained" 
+            color="primary"
+            disabled={!selectedColumnField}
+          >
+            确认拆分
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
