@@ -2,10 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { 
   Box, 
   Typography, 
-  IconButton,
   Tooltip
 } from '@mui/material';
-import DownloadIcon from '@mui/icons-material/Download';
 import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem } from '../common';
 
 interface SheetData {
@@ -25,47 +23,6 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
   const [currentSheet, setCurrentSheet] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedRows, setSelectedRows] = useState<number[]>([]);
-
-  // 删除选中的行
-  const handleDeleteRows = useCallback(() => {
-    if (selectedRows.length === 0) return;
-
-    const newData = [...sheets];
-    const currentSheetData = [...newData[currentSheet].data];
-    
-    // 按照索引从大到小排序，这样删除时不会影响其他行的索引
-    const sortedIndexes = selectedRows.sort((a, b) => b - a);
-    
-    // 删除选中的行（跳过表头）
-    sortedIndexes.forEach(rowIndex => {
-      currentSheetData.splice(rowIndex + 1, 1);
-    });
-
-    newData[currentSheet].data = currentSheetData;
-    newData[currentSheet].totalRows = currentSheetData.length - 1; // 减去表头
-
-    setSheets(newData);
-    setSelectedRows([]);
-  }, [selectedRows, sheets, currentSheet]);
-
-  // 添加新行
-  const handleAddRow = useCallback(() => {
-    const newData = [...sheets];
-    const currentSheetData = [...newData[currentSheet].data];
-    const columnCount = currentSheetData[0].length;
-    
-    // 创建一个空行，列数与当前表格相同
-    const newRow = new Array(columnCount).fill('');
-    
-    // 在表格数据中添加新行（在表头之后）
-    currentSheetData.push(newRow);
-
-    newData[currentSheet].data = currentSheetData;
-    newData[currentSheet].totalRows = currentSheetData.length - 1; // 减去表头
-
-    setSheets(newData);
-  }, [sheets, currentSheet]);
 
   // 从本地存储加载编辑数据
   const loadEditedData = useCallback((fileId: string) => {
@@ -94,6 +51,112 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     if (!file) return '';
     return `${file.name}_${file.size}_${file.lastModified}`;
   }, []);
+
+  // 删除选中的行
+  const handleDeleteRows = useCallback((selectedRowIndexes: number[]) => {
+    if (selectedRowIndexes.length === 0) return;
+
+    const newData = [...sheets];
+    const currentSheetData = [...newData[currentSheet].data];
+    
+    // 按照索引从大到小排序，这样删除时不会影响其他行的索引
+    const sortedIndexes = selectedRowIndexes.sort((a, b) => b - a);
+    
+    // 删除选中的行（跳过表头）
+    sortedIndexes.forEach(rowIndex => {
+      currentSheetData.splice(rowIndex + 1, 1);
+    });
+
+    newData[currentSheet].data = currentSheetData;
+    newData[currentSheet].totalRows = currentSheetData.length - 1; // 减去表头
+
+    setSheets(newData);
+
+    // 更新编辑数据，删除被删除行的编辑记录
+    setEditedRows(prev => {
+      const newEditedRows = { ...prev };
+      const fileId = getFileId(file);
+      
+      // 删除被删除行的编辑数据
+      sortedIndexes.forEach(rowIndex => {
+        const sheetId = `${currentSheet}_${rowIndex}`;
+        delete newEditedRows[sheetId];
+      });
+      
+      // 重新调整后续行的编辑数据索引
+      Object.keys(newEditedRows).forEach(sheetId => {
+        const [sheetIndex, rowIndex] = sheetId.split('_').map(Number);
+        if (sheetIndex === currentSheet) {
+          // 计算删除后该行的新索引
+          let newRowIndex = rowIndex;
+          sortedIndexes.forEach(deletedIndex => {
+            if (rowIndex > deletedIndex) {
+              newRowIndex--;
+            }
+          });
+          
+          // 如果索引发生变化，更新编辑数据
+          if (newRowIndex !== rowIndex) {
+            const newSheetId = `${currentSheet}_${newRowIndex}`;
+            newEditedRows[newSheetId] = newEditedRows[sheetId];
+            delete newEditedRows[sheetId];
+          }
+        }
+      });
+      
+      // 保存更新后的编辑数据到本地存储
+      saveEditedData(fileId, newEditedRows);
+      return newEditedRows;
+    });
+  }, [sheets, currentSheet, file, getFileId, saveEditedData]);
+
+  // 添加新行
+  const handleAddRow = useCallback(() => {
+    const newData = [...sheets];
+    const currentSheetData = [...newData[currentSheet].data];
+    const columnCount = currentSheetData[0].length;
+    
+    // 创建一个空行，列数与当前表格相同
+    const newRow = new Array(columnCount).fill('');
+    
+    // 在表格数据中添加新行（在表头之后）
+    currentSheetData.push(newRow);
+
+    newData[currentSheet].data = currentSheetData;
+    newData[currentSheet].totalRows = currentSheetData.length - 1; // 减去表头
+
+    setSheets(newData);
+  }, [sheets, currentSheet]);
+
+  // 导出功能
+  const handleExport = useCallback(() => {
+    if (!sheets.length) return;
+    
+    const currentSheetData = sheets[currentSheet];
+    const csvContent = [
+      currentSheetData.data[0].join(','), // 表头
+      ...currentSheetData.data.slice(1).map(row => 
+        row.map(cell => {
+          const value = cell?.toString() || '';
+          // 如果包含逗号、引号或换行符，需要用引号包围并转义
+          if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        }).join(',')
+      )
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${currentSheetData.name || 'sheet'}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [sheets, currentSheet]);
 
   // 初始化编辑数据，从本地存储加载
   const [editedRows, setEditedRows] = useState<{ [key: string]: { [key: string]: any } }>(() => {
@@ -278,7 +341,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
           enableExport={true}
           onAdd={handleAddRow}
           onDelete={handleDeleteRows}
-          onExport={() => {/* TODO: 实现导出功能 */}}
+          onExport={handleExport}
           onRowUpdate={(updatedRow, originalRow) => {
             const sheetId = `${index}_${updatedRow.id}`;
                   const changedField = Object.keys(updatedRow).find(
@@ -312,35 +375,6 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
         tabs={tabs}
         value={currentSheet}
         onChange={handleSheetChange}
-        actions={
-          <Tooltip 
-            title="导出" 
-            arrow
-                sx={{
-              '& .MuiTooltip-arrow': {
-                color: 'grey.900',
-              },
-              '& .MuiTooltip-tooltip': {
-                backgroundColor: 'grey.900',
-                fontSize: '0.8rem',
-                py: 0.5,
-                px: 1,
-                    borderRadius: 1,
-              },
-            }}
-          >
-            <IconButton
-              sx={{
-                color: 'primary.main',
-                '&:hover': {
-                  backgroundColor: 'action.hover',
-                },
-              }}
-            >
-              <DownloadIcon />
-            </IconButton>
-          </Tooltip>
-        }
       />
     </Box>
   );

@@ -3,12 +3,12 @@ import {
   Box, 
   IconButton, 
   Tooltip,
-  Toolbar as MuiToolbar
+  Toolbar as MuiToolbar,
+  Typography
 } from '@mui/material';
 import { 
   DataGrid, 
   GridColDef,
-  GridToolbar,
   GridRowSelectionModel,
   GridRowModel
 } from '@mui/x-data-grid';
@@ -104,83 +104,112 @@ const DataTable: React.FC<DataTableProps> = ({
   pageSizeOptions = [10, 25, 50, 100],
   initialPageSize = 10
 }) => {
-  const [selectedRows, setSelectedRows] = useState<number[]>([]);
+  const [selectedRows, setSelectedRows] = useState<any[]>([]);
 
   const handleSelectionChange = useCallback((newSelection: GridRowSelectionModel) => {
-    setSelectedRows(Array.isArray(newSelection) ? newSelection : []);
+    console.log('Selection changed:', newSelection);
+    // GridRowSelectionModel 是一个包含 ids 属性的对象
+    const selectedIds = newSelection?.ids ? Array.from(newSelection.ids) : [];
+    setSelectedRows(selectedIds);
   }, []);
 
   const handleDeleteRows = useCallback(() => {
-    if (selectedRows.length === 0 || !onDelete) return;
-    onDelete(selectedRows);
+    const selectedIds = Array.isArray(selectedRows) ? selectedRows : [];
+    if (selectedIds.length === 0 || !onDelete) return;
+    onDelete(selectedIds);
     setSelectedRows([]);
   }, [selectedRows, onDelete]);
 
-  const CustomToolbar = () => (
-    <MuiToolbar sx={{ p: 2, display: 'flex', gap: 1, alignItems: 'center' }}>
-      <GridToolbar 
-        sx={{
-          display: 'flex',
-          gap: 1,
-          alignItems: 'center',
-          '& .MuiButton-root': {
-            color: 'primary.main',
-            fontSize: '0.875rem',
-            fontWeight: 500,
-          }
-        }}
-      />
-      <Box sx={{ borderLeft: 1, borderColor: 'divider', height: 24, mx: 1 }} />
-      
-      {enableAdd && onAdd && (
-        <Tooltip title="添加行" arrow>
-          <IconButton
-            onClick={onAdd}
-            sx={{
-              color: 'primary.main',
-              '&:hover': { backgroundColor: 'action.hover' },
-            }}
-          >
-            <AddIcon />
-          </IconButton>
-        </Tooltip>
-      )}
-      
-      {enableDelete && onDelete && (
-        <Tooltip title="删除选中行" arrow>
-          <span>
-            <IconButton
-              onClick={handleDeleteRows}
-              disabled={selectedRows.length === 0}
-              sx={{
-                color: selectedRows.length > 0 ? 'error.main' : 'action.disabled',
-                '&:hover': { backgroundColor: 'action.hover' },
-              }}
-            >
-              <DeleteIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-      )}
-      
-      {enableExport && onExport && (
-        <Tooltip title="导出" arrow>
-          <IconButton
-            onClick={onExport}
-            sx={{
-              color: 'primary.main',
-              '&:hover': { backgroundColor: 'action.hover' },
-            }}
-          >
-            <DownloadIcon />
-          </IconButton>
-        </Tooltip>
-      )}
-    </MuiToolbar>
-  );
 
   return (
     <Box sx={{ height, width: '100%', position: 'relative' }}>
+      {/* 独立工具栏 - 参考demo.tsx的实现 */}
+      {(enableAdd || enableDelete || enableExport) && (
+        <MuiToolbar 
+          sx={[
+            {
+              pl: { sm: 2 },
+              pr: { xs: 1, sm: 1 },
+              display: 'flex',
+              gap: 1,
+              alignItems: 'center',
+              minHeight: '48px',
+              backgroundColor: 'background.default',
+              borderBottom: 1,
+              borderColor: 'divider'
+            },
+            (Array.isArray(selectedRows) && selectedRows.length > 0) && {
+              bgcolor: (theme) => theme.palette.action.selected,
+            },
+          ]}
+        >
+          {(Array.isArray(selectedRows) && selectedRows.length > 0) ? (
+            <>
+              <Typography
+                sx={{ flex: '1 1 100%' }}
+                color="inherit"
+                variant="subtitle1"
+                component="div"
+              >
+                {selectedRows.length} 行已选中
+              </Typography>
+              
+              {enableDelete && onDelete && (
+                <Tooltip title="删除选中行" arrow>
+                  <IconButton
+                    onClick={handleDeleteRows}
+                    sx={{
+                      color: 'error.main',
+                      '&:hover': { backgroundColor: 'action.hover' },
+                    }}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </>
+          ) : (
+            <>
+              <Typography
+                sx={{ flex: '1 1 100%' }}
+                variant="h6"
+                component="div"
+              >
+                数据表格
+              </Typography>
+              
+              {enableAdd && onAdd && (
+                <Tooltip title="添加行" arrow>
+                  <IconButton
+                    onClick={onAdd}
+                    sx={{
+                      color: 'primary.main',
+                      '&:hover': { backgroundColor: 'action.hover' },
+                    }}
+                  >
+                    <AddIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+              
+              {enableExport && onExport && (
+                <Tooltip title="导出" arrow>
+                  <IconButton
+                    onClick={onExport}
+                    sx={{
+                      color: 'primary.main',
+                      '&:hover': { backgroundColor: 'action.hover' },
+                    }}
+                  >
+                    <DownloadIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </>
+          )}
+        </MuiToolbar>
+      )}
+      
       <StyledDataGrid
         rows={rows}
         columns={columns}
@@ -195,28 +224,19 @@ const DataTable: React.FC<DataTableProps> = ({
           },
         }}
         checkboxSelection={enableSelection}
+        rowSelectionModel={{ type: 'include', ids: new Set(selectedRows) }}
+        onRowSelectionModelChange={handleSelectionChange}
         autoHeight={false}
         density="compact"
         rowHeight={52}
         columnHeaderHeight={160}
         showCellVerticalBorder
         showColumnVerticalBorder
-        slots={{
-          toolbar: CustomToolbar,
-        }}
-        slotProps={{
-          toolbar: {
-            showQuickFilter: true,
-            quickFilterProps: { debounceMs: 500 },
-            printOptions: { disableToolbarButton: true }
-          },
-        }}
         disableColumnFilter={false}
         disableColumnSelector={false}
         disableDensitySelector={false}
         disableColumnMenu={false}
         editMode="cell"
-        onRowSelectionModelChange={handleSelectionChange}
         processRowUpdate={onRowUpdate}
         sx={{
           '& .MuiDataGrid-toolbarContainer': {
