@@ -2,26 +2,19 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { 
   Box, 
   Typography, 
-  Tooltip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  Alert,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem
+  Tooltip
 } from '@mui/material';
-import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem } from '../common';
-
-interface SheetData {
-  name: string;
-  data: any[][];
-  totalRows: number;
-  totalCols: number;
-}
+import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog } from '../common';
+import { 
+  SheetData, 
+  EditedRowData,
+  getFileId,
+  loadEditedData,
+  saveEditedData,
+  formatCellValue,
+  splitTableByColumn,
+  exportToCSV
+} from '../../utils/excelUtils';
 
 interface ExcelViewerProps {
   file: File | null;
@@ -34,39 +27,9 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [splitDialogOpen, setSplitDialogOpen] = useState(false);
-  const [selectedColumnField, setSelectedColumnField] = useState<string>('');
-  const [columnUniqueValues, setColumnUniqueValues] = useState<string[]>([]);
-
-  // 从本地存储加载编辑数据
-  const loadEditedData = useCallback((fileId: string) => {
-    try {
-      const savedData = localStorage.getItem(`excel_edits_${fileId}`);
-      if (savedData) {
-        return JSON.parse(savedData);
-      }
-    } catch (err) {
-      console.error('加载编辑数据失败:', err);
-    }
-    return {};
-  }, []);
-
-  // 保存编辑数据到本地存储
-  const saveEditedData = useCallback((fileId: string, data: any) => {
-    try {
-      localStorage.setItem(`excel_edits_${fileId}`, JSON.stringify(data));
-    } catch (err) {
-      console.error('保存编辑数据失败:', err);
-    }
-  }, []);
-
-  // 生成文件唯一标识
-  const getFileId = useCallback((file: File | null) => {
-    if (!file) return '';
-    return `${file.name}_${file.size}_${file.lastModified}`;
-  }, []);
 
   // 初始化编辑数据，从本地存储加载
-  const [editedRows, setEditedRows] = useState<{ [key: string]: { [key: string]: any } }>(() => {
+  const [editedRows, setEditedRows] = useState<EditedRowData>(() => {
     return loadEditedData(getFileId(file));
   });
 
@@ -146,104 +109,37 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     setSheets(newData);
   }, [sheets, currentSheet]);
 
+  // 拆分表格功能
   const handleSplitTable = useCallback(() => {
     setSplitDialogOpen(true);
   }, []);
 
   const handleCloseSplitDialog = useCallback(() => {
     setSplitDialogOpen(false);
-    setSelectedColumnField('');
-    setColumnUniqueValues([]);
   }, []);
 
-  const handleColumnChange = useCallback((columnField: string) => {
-    setSelectedColumnField(columnField);
-    
-    if (columnField && sheets[currentSheet]?.data.length > 1) {
-      const currentSheetData = sheets[currentSheet];
-      const columnIndex = parseInt(columnField);
-      const dataRows = currentSheetData.data.slice(1);
-      
-      const uniqueValues = [...new Set(dataRows.map((row, rowIndex) => {
-        const sheetId = `${currentSheet}_${rowIndex}`;
-        const editedRowData = editedRows[sheetId] || {};
-        const cellValue = editedRowData[String(columnIndex)] || row[columnIndex];
-        return cellValue?.toString() || '';
-      }))].filter(val => val !== '');
-      
-      setColumnUniqueValues(uniqueValues);
-    } else {
-      setColumnUniqueValues([]);
-    }
-  }, [sheets, currentSheet, editedRows]);
-
-  const confirmSplitTable = useCallback(() => {
-    if (!selectedColumnField) return;
-
+  const handleConfirmSplit = useCallback((columnField: string) => {
     const currentSheetData = sheets[currentSheet];
-    if (!currentSheetData || !currentSheetData.data.length) return;
+    if (!currentSheetData) return;
 
-    const headers = currentSheetData.data[0];
-    const columnIndex = parseInt(selectedColumnField);
-    const dataRows = currentSheetData.data.slice(1);
-
-    const rowsWithEdits = dataRows.map((row, rowIndex) => {
-      const sheetId = `${currentSheet}_${rowIndex}`;
-      const editedRowData = editedRows[sheetId] || {};
-      return row.map((cell, cellIndex) => editedRowData[String(cellIndex)] || cell);
-    });
-
-    const uniqueValues = [...new Set(rowsWithEdits.map(row => row[columnIndex]?.toString() || ''))].filter(val => val !== '');
-
-    if (uniqueValues.length === 0) {
+    const columnIndex = parseInt(columnField);
+    const newSheets = splitTableByColumn(currentSheetData, columnIndex, currentSheet, editedRows);
+    
+    if (newSheets.length === 0) {
       setError('该列没有有效数据用于拆分');
       setSplitDialogOpen(false);
       return;
     }
 
-    const newSheets: SheetData[] = uniqueValues.map(value => {
-      const filteredRows = rowsWithEdits.filter(row => row[columnIndex]?.toString() === value);
-      return {
-        name: `${currentSheetData.name}_${value}`,
-        data: [headers, ...filteredRows],
-        totalRows: filteredRows.length,
-        totalCols: headers.length
-      };
-    });
-
-    const updatedSheets = [...sheets, ...newSheets];
-    setSheets(updatedSheets);
+    setSheets(prev => [...prev, ...newSheets]);
     setSplitDialogOpen(false);
-  }, [selectedColumnField, sheets, currentSheet, editedRows]);
+  }, [sheets, currentSheet, editedRows]);
 
   // 导出功能
   const handleExport = useCallback(() => {
     if (!sheets.length) return;
-    
     const currentSheetData = sheets[currentSheet];
-    const csvContent = [
-      currentSheetData.data[0].join(','), // 表头
-      ...currentSheetData.data.slice(1).map(row => 
-        row.map(cell => {
-          const value = cell?.toString() || '';
-          // 如果包含逗号、引号或换行符，需要用引号包围并转义
-          if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-            return `"${value.replace(/"/g, '""')}"`;
-          }
-          return value;
-        }).join(',')
-      )
-    ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${currentSheetData.name || 'sheet'}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    exportToCSV(currentSheetData);
   }, [sheets, currentSheet]);
 
   const processExcel = useCallback(async (file: File) => {
@@ -289,21 +185,6 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
 
   const handleSheetChange = (_event: React.SyntheticEvent, newValue: number) => {
     setCurrentSheet(newValue);
-  };
-
-  const formatCellValue = (value: any): string => {
-    if (value instanceof Date) {
-      return value.toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      });
-    }
-    return value?.toString() || '';
   };
 
   if (loading) {
@@ -462,92 +343,14 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
         onChange={handleSheetChange}
       />
       
-      {/* 拆分表格确认对话框 */}
-      <Dialog
+      <SplitTableDialog
         open={splitDialogOpen}
         onClose={handleCloseSplitDialog}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>拆分表格</DialogTitle>
-        <DialogContent>
-          <Alert severity="info" sx={{ mb: 2 }}>
-            请选择要用于拆分的列
-          </Alert>
-          <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel>选择列</InputLabel>
-            <Select
-              value={selectedColumnField}
-              onChange={(e) => handleColumnChange(e.target.value)}
-              label="选择列"
-            >
-              {sheets[currentSheet]?.data[0]?.map((header: string, index: number) => (
-                <MenuItem key={index} value={String(index)}>
-                  {header || `列 ${index + 1}`}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          
-          {columnUniqueValues.length > 0 && (
-            <Box sx={{ mt: 2 }}>
-              <Alert severity="success" sx={{ mb: 1 }}>
-                检测到 {columnUniqueValues.length} 个唯一值
-              </Alert>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                将创建以下工作表：
-              </Typography>
-              <Box sx={{ 
-                display: 'flex', 
-                flexWrap: 'wrap', 
-                gap: 1,
-                maxHeight: 120,
-                overflow: 'auto',
-                p: 1,
-                border: 1,
-                borderColor: 'divider',
-                borderRadius: 1,
-                backgroundColor: 'background.default'
-              }}>
-                {columnUniqueValues.map((value, index) => (
-                  <Box
-                    key={index}
-                    sx={{
-                      px: 1.5,
-                      py: 0.5,
-                      backgroundColor: 'primary.main',
-                      color: 'primary.contrastText',
-                      borderRadius: 1,
-                      fontSize: '0.75rem',
-                      fontWeight: 500
-                    }}
-                  >
-                    {value}
-                  </Box>
-                ))}
-              </Box>
-            </Box>
-          )}
-          
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            系统将自动检测该列的所有唯一值，并为每个值创建一个新的工作表。
-            拆分后的表格将保持原有的表头、样式和公式。
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseSplitDialog}>
-            取消
-          </Button>
-          <Button 
-            onClick={confirmSplitTable} 
-            variant="contained" 
-            color="primary"
-            disabled={!selectedColumnField}
-          >
-            确认拆分
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onConfirm={handleConfirmSplit}
+        sheetData={sheets[currentSheet] || null}
+        currentSheet={currentSheet}
+        editedRows={editedRows}
+      />
     </Box>
   );
 };
