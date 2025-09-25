@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx-js-style';
+import * as ExcelJS from 'exceljs';
 
 // 定义消息类型
 interface WorkerMessage {
@@ -16,6 +16,7 @@ interface SheetData {
   styles?: any;
   formulas?: any;
   properties?: any; // 工作表级别的属性（列宽、行高、合并单元格等）
+  originalWorkbook?: any; // 原始workbook对象引用
 }
 
 interface ExcelWorkbook {
@@ -25,174 +26,281 @@ interface ExcelWorkbook {
 
 // 处理Excel文件 - 保留所有格式信息
 async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
-  console.log('=== 开始解析Excel文件 ===');
+  console.log('=== 开始解析Excel文件 (使用ExcelJS) ===');
   console.log('文件大小:', file.byteLength, 'bytes');
   
-  // 尝试不同的配置选项
-  console.log('尝试配置1: 完整配置');
-  let workbook = XLSX.read(file, { 
-    type: 'array',
-    cellStyles: true,
-    cellFormula: true,
-    cellHTML: false,
-    cellNF: true,
-    cellText: false,
-    cellDates: true,
-    dateNF: 'yyyy-mm-dd',
-    sheetStubs: false,
-    bookDeps: true,
-    bookFiles: true,
-    bookProps: true,
-    bookSheets: true,
-    bookVBA: false,
-    password: '',
-    WTF: false
-  });
-  
-  // 如果第一个配置没有样式，尝试更简单的配置
-  if (!(workbook as any).SSF && !(workbook as any).Styles) {
-    console.log('配置1没有样式信息，尝试配置2: 简化配置');
-    workbook = XLSX.read(file, { 
-      type: 'array',
-      cellStyles: true,
-      cellFormula: true,
-      cellDates: true
-    });
-  }
-  
-  // 如果还是没有样式，尝试最基础的配置
-  if (!(workbook as any).SSF && !(workbook as any).Styles) {
-    console.log('配置2没有样式信息，尝试配置3: 最基础配置');
-    workbook = XLSX.read(file, { 
-      type: 'array',
-      cellStyles: true
-    });
-  }
-  
-  // 如果还是没有样式，尝试使用原生xlsx库
-  if (!(workbook as any).SSF && !(workbook as any).Styles) {
-    console.log('配置3没有样式信息，尝试原生xlsx库');
-    try {
-      const XLSX_NATIVE = await import('xlsx');
-      workbook = XLSX_NATIVE.read(file, { 
-        type: 'array',
-        cellStyles: true,
-        cellFormula: true,
-        cellDates: true
-      });
-      console.log('原生xlsx库结果:', {
-        hasSSF: !!(workbook as any).SSF,
-        hasStyles: !!(workbook as any).Styles,
-        workbookKeys: Object.keys(workbook)
-      });
-    } catch (error) {
-      console.error('原生xlsx库导入失败:', error);
-    }
-  }
-  
-  console.log('Excel文件解析完成，工作表数量:', workbook.SheetNames.length);
-  console.log('workbook属性:', Object.keys(workbook));
-  
-  // 详细检查workbook的所有属性
-  console.log('workbook详细属性检查:');
-  Object.keys(workbook).forEach(key => {
-    const value = (workbook as any)[key];
-    if (typeof value === 'object' && value !== null) {
-      console.log(`  - ${key}:`, {
-        type: typeof value,
-        isArray: Array.isArray(value),
-        keys: Object.keys(value).slice(0, 10), // 只显示前10个键
-        length: Array.isArray(value) ? value.length : Object.keys(value).length
-      });
-    } else {
-      console.log(`  - ${key}:`, value);
-    }
-  });
-  
-  // 检查第一个工作表的详细信息
-  if (workbook.SheetNames.length > 0) {
-    const firstSheetName = workbook.SheetNames[0];
-    const firstSheet = workbook.Sheets[firstSheetName];
-    console.log(`第一个工作表 ${firstSheetName} 的详细信息:`);
-    console.log('  - 工作表属性:', Object.keys(firstSheet).filter(k => k.startsWith('!')));
-    console.log('  - 单元格数量:', Object.keys(firstSheet).filter(k => !k.startsWith('!')).length);
+  try {
+    // 创建新的工作簿实例
+    const workbook = new ExcelJS.Workbook();
     
-    // 检查前几个单元格的样式
-    const cellKeys = Object.keys(firstSheet).filter(k => !k.startsWith('!')).slice(0, 5);
-    cellKeys.forEach(cellKey => {
-      const cell = firstSheet[cellKey];
-      console.log(`  - 单元格 ${cellKey}:`, {
-        hasValue: !!cell.v,
-        hasFormula: !!cell.f,
-        hasStyle: !!cell.s,
-        styleContent: cell.s,
-        allKeys: Object.keys(cell)
-      });
-    });
+    // 从ArrayBuffer加载Excel文件
+    await workbook.xlsx.load(file);
     
-    // 检查是否有样式表信息
-    console.log('  - workbook.SSF (样式表):', !!(workbook as any).SSF);
-    console.log('  - workbook.Styles (样式):', !!(workbook as any).Styles);
-    if ((workbook as any).SSF) {
-      console.log('  - SSF键数量:', Object.keys((workbook as any).SSF).length);
-    }
-    if ((workbook as any).Styles) {
-      console.log('  - Styles键数量:', Object.keys((workbook as any).Styles).length);
-    }
-  }
-  
-  const sheets: SheetData[] = [];
+    const sheets: SheetData[] = [];
 
-  for (const sheetName of workbook.SheetNames) {
-    console.log(`\n--- 处理工作表: ${sheetName} ---`);
-    const worksheet = workbook.Sheets[sheetName];
-    
-    // 获取原始数据，保留公式
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-      header: 1,
-      defval: '',
-      raw: false // 保留公式
-    }) as any[][];
-    
-    console.log(`工作表 ${sheetName} 数据行数: ${jsonData.length}`);
-    
-    // 提取样式信息
-    const styles = extractStyles(worksheet);
-    console.log(`工作表 ${sheetName} 有样式的单元格数量: ${Object.keys(styles).length}`);
-    
-    // 输出部分样式信息用于调试
+    // 处理每个工作表
+    for (const worksheet of workbook.worksheets) {
+      console.log(`\n--- 处理工作表: ${worksheet.name} ---`);
+      
+      // 获取工作表的基本信息
+      const rowCount = worksheet.rowCount;
+      const columnCount = worksheet.columnCount;
+      console.log(`工作表 ${worksheet.name} 尺寸: ${rowCount} 行 x ${columnCount} 列`);
+      
+      // 提取数据
+      const data: any[][] = [];
+      const styles: any = {};
+      const formulas: any = {};
+      const properties: any = {};
+      
+      // 遍历所有行和列
+      for (let rowNumber = 1; rowNumber <= rowCount; rowNumber++) {
+        const rowData: any[] = [];
+        
+        for (let colNumber = 1; colNumber <= columnCount; colNumber++) {
+          const cell = worksheet.getCell(rowNumber, colNumber);
+          // 获取单元格值
+          let cellValue: any = '';
+          
+          if (cell.value !== null && cell.value !== undefined) {
+            if (typeof cell.value === 'object' && 'result' in cell.value) {
+              // 公式单元格
+              cellValue = cell.value.result;
+              formulas[`${rowNumber}_${colNumber}`] = cell.value.formula;
+            } else if (typeof cell.value === 'object' && 'richText' in cell.value) {
+              // 富文本单元格 - 提取纯文本内容
+              const richTextValue = cell.value as any;
+              if (Array.isArray(richTextValue.richText)) {
+                cellValue = richTextValue.richText.map((item: any) => item.text || '').join('');
+              } else {
+                cellValue = richTextValue.richText?.text || '';
+              }
+            } else {
+              cellValue = cell.value;
+            }
+          }
+          
+          rowData[colNumber - 1] = cellValue;
+          
+          const cellAddress = `${rowNumber}_${colNumber}`;
+          
+          // 调试：打印前几个单元格的原始样式
+          if (rowNumber <= 3 && colNumber <= 3) {
+            console.log(`原始单元格 ${cellAddress} 样式:`, cell.style);
+          }
+          
+          // 专门检查 O-1 单元格 (第15列第1行)
+          if (rowNumber === 1 && colNumber === 15) {
+            console.log(`=== O-1 单元格样式调试 ===`);
+            console.log(`单元格地址: ${cellAddress}`);
+            console.log(`原始样式:`, cell.style);
+            console.log(`填充样式:`, cell.style?.fill);
+            if (cell.style?.fill) {
+              console.log(`填充类型:`, cell.style.fill.type);
+              console.log(`前景色:`, (cell.style.fill as any).fgColor);
+              console.log(`背景色:`, (cell.style.fill as any).bgColor);
+            }
+            console.log(`边框样式:`, cell.style?.border);
+            if (cell.style?.border) {
+              console.log(`上边框:`, cell.style.border.top);
+              console.log(`下边框:`, cell.style.border.bottom);
+              console.log(`左边框:`, cell.style.border.left);
+              console.log(`右边框:`, cell.style.border.right);
+            }
+          }
+          
+          // 专门检查 G-2 单元格 (第7列第2行)
+          if (rowNumber === 2 && colNumber === 7) {
+            console.log(`=== G-2 单元格样式调试 ===`);
+            console.log(`单元格地址: ${cellAddress}`);
+            console.log(`原始样式:`, cell.style);
+            console.log(`边框样式:`, cell.style?.border);
+            if (cell.style?.border) {
+              console.log(`上边框:`, cell.style.border.top);
+              console.log(`下边框:`, cell.style.border.bottom);
+              console.log(`左边框:`, cell.style.border.left);
+              console.log(`右边框:`, cell.style.border.right);
+            }
+          }
+          
+          // 提取样式信息 - 无论单元格是否有值都要提取样式
+          if (cell.style) {
+            
+            styles[cellAddress] = {
+              font: cell.style.font ? {
+                name: cell.style.font.name,
+                size: cell.style.font.size,
+                bold: cell.style.font.bold,
+                italic: cell.style.font.italic,
+                underline: cell.style.font.underline,
+                strike: cell.style.font.strike,
+                color: cell.style.font.color ? {
+                  argb: cell.style.font.color.argb,
+                  theme: cell.style.font.color.theme
+                } : undefined
+              } : undefined,
+              fill: cell.style.fill ? {
+                type: cell.style.fill.type,
+                pattern: (cell.style.fill as any).pattern,
+                fgColor: (cell.style.fill as any).fgColor ? {
+                  argb: (cell.style.fill as any).fgColor.argb,
+                  theme: (cell.style.fill as any).fgColor.theme
+                } : undefined,
+                bgColor: (cell.style.fill as any).bgColor ? {
+                  argb: (cell.style.fill as any).bgColor.argb,
+                  theme: (cell.style.fill as any).bgColor.theme
+                } : undefined
+              } : undefined,
+              border: cell.style.border ? {
+                top: cell.style.border.top ? {
+                  style: cell.style.border.top.style,
+                  color: cell.style.border.top.color ? {
+                    argb: cell.style.border.top.color.argb,
+                    theme: cell.style.border.top.color.theme
+                  } : undefined
+                } : undefined,
+                left: cell.style.border.left ? {
+                  style: cell.style.border.left.style,
+                  color: cell.style.border.left.color ? {
+                    argb: cell.style.border.left.color.argb,
+                    theme: cell.style.border.left.color.theme
+                  } : undefined
+                } : undefined,
+                bottom: cell.style.border.bottom ? {
+                  style: cell.style.border.bottom.style,
+                  color: cell.style.border.bottom.color ? {
+                    argb: cell.style.border.bottom.color.argb,
+                    theme: cell.style.border.bottom.color.theme
+                  } : undefined
+                } : undefined,
+                right: cell.style.border.right ? {
+                  style: cell.style.border.right.style,
+                  color: cell.style.border.right.color ? {
+                    argb: cell.style.border.right.color.argb,
+                    theme: cell.style.border.right.color.theme
+                  } : undefined
+                } : undefined,
+                diagonal: cell.style.border.diagonal ? {
+                  style: cell.style.border.diagonal.style,
+                  color: cell.style.border.diagonal.color ? {
+                    argb: cell.style.border.diagonal.color.argb,
+                    theme: cell.style.border.diagonal.color.theme
+                  } : undefined
+                } : undefined
+              } : undefined,
+              alignment: cell.style.alignment ? {
+                horizontal: cell.style.alignment.horizontal,
+                vertical: cell.style.alignment.vertical,
+                wrapText: cell.style.alignment.wrapText,
+                textRotation: cell.style.alignment.textRotation,
+                indent: cell.style.alignment.indent,
+                readingOrder: cell.style.alignment.readingOrder
+              } : undefined,
+              numFmt: cell.style.numFmt,
+              protection: cell.style.protection ? {
+                locked: cell.style.protection.locked,
+                hidden: cell.style.protection.hidden
+              } : undefined
+            };
+            
+            // 调试：打印提取后的样式
+            if (rowNumber <= 3 && colNumber <= 3) {
+              console.log(`提取后单元格 ${cellAddress} 样式:`, styles[cellAddress]);
+            }
+            
+            // 专门检查 O-1 单元格提取后的样式
+            if (rowNumber === 1 && colNumber === 15) {
+              console.log(`O-1 单元格提取后样式:`, styles[cellAddress]);
+            }
+            
+            // 专门检查 G-2 单元格提取后的样式
+            if (rowNumber === 2 && colNumber === 7) {
+              console.log(`G-2 单元格提取后样式:`, styles[cellAddress]);
+            }
+          } else {
+            // 即使没有样式，也要记录空单元格，这样导出时能正确处理
+            styles[cellAddress] = {
+              font: undefined,
+              fill: undefined,
+              border: undefined,
+              alignment: undefined,
+              numFmt: undefined,
+              protection: undefined
+            };
+            
+            // 调试：打印空单元格
+            if (rowNumber <= 3 && colNumber <= 3) {
+              console.log(`空单元格 ${cellAddress} 无样式`);
+            }
+          }
+        }
+        
+        data[rowNumber - 1] = rowData;
+      }
+      
+      // 确保数据数组长度与行数一致
+      while (data.length < rowCount) {
+        data.push(new Array(columnCount).fill(''));
+      }
+      
+      console.log(`工作表 ${worksheet.name} 数据行数: ${data.length}`);
+      console.log(`工作表 ${worksheet.name} 有样式的单元格数量: ${Object.keys(styles).length}`);
+      console.log(`工作表 ${worksheet.name} 有公式的单元格数量: ${Object.keys(formulas).length}`);
+      
+      // 提取工作表级别的属性
+      properties.columnCount = worksheet.columnCount;
+      properties.rowCount = worksheet.rowCount;
+      
+      // 列宽
+      if (worksheet.columns && worksheet.columns.length > 0) {
+        properties.columns = worksheet.columns.map(col => ({
+          width: col.width,
+          hidden: col.hidden,
+          style: col.style
+        }));
+      }
+      
+      // 行高
+      properties.rows = [];
+      worksheet.eachRow((row, rowNumber) => {
+        if (row.height) {
+          properties.rows[rowNumber - 1] = {
+            height: row.height,
+            hidden: row.hidden
+          };
+        }
+      });
+      
+      // 合并单元格
+      if (worksheet.model && worksheet.model.merges) {
+        properties.merges = worksheet.model.merges.map((merge: any) => ({
+          top: merge.top,
+          left: merge.left,
+          bottom: merge.bottom,
+          right: merge.right
+        }));
+      }
+      
+      // 保护设置 - 简化处理
+      if ((worksheet as any).protection) {
+        properties.protection = (worksheet as any).protection;
+      }
+      
+      // 打印部分样式信息用于调试
     const styleKeys = Object.keys(styles).slice(0, 3);
     styleKeys.forEach(cellAddr => {
       console.log(`  单元格 ${cellAddr} 样式:`, styles[cellAddr]);
     });
     
-    // 提取公式信息
-    const formulas = extractFormulas(worksheet);
-    console.log(`工作表 ${sheetName} 有公式的单元格数量: ${Object.keys(formulas).length}`);
-    
-    // 提取工作表级别的属性
-    const properties = extractSheetProperties(worksheet);
-    console.log(`工作表 ${sheetName} 工作表级别属性:`, Object.keys(properties));
-    
-    // 输出列宽和行高信息
-    if (properties['!cols']) {
-      console.log(`  列宽设置: ${properties['!cols'].length} 列`);
-    }
-    if (properties['!rows']) {
-      console.log(`  行高设置: ${properties['!rows'].length} 行`);
-    }
-    if (properties['!merges']) {
-      console.log(`  合并单元格: ${properties['!merges'].length} 个`);
-    }
-    
     sheets.push({
-      name: sheetName,
-      data: jsonData,
-      totalRows: jsonData.length,
-      totalCols: Array.isArray(jsonData[0]) ? jsonData[0].length : 0,
+        name: worksheet.name,
+        data: data,
+        totalRows: data.length,
+        totalCols: data.length > 0 ? data[0].length : 0,
       styles: styles,
       formulas: formulas,
-      properties: properties
+        properties: properties,
+        originalWorkbook: workbook // 保存原始workbook引用
     });
   }
 
@@ -201,146 +309,28 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
     sheets: sheets,
     workbook: workbook // 保留完整的workbook对象
   };
-}
-
-// 提取单元格样式信息
-function extractStyles(worksheet: any): any {
-  const styles: any = {};
-  
-  console.log(`  - 开始提取样式信息`);
-  console.log(`  - 工作表范围: ${worksheet['!ref']}`);
-  console.log(`  - 工作表所有属性:`, Object.keys(worksheet).filter(k => k.startsWith('!')));
-  
-  if (worksheet['!ref']) {
-    const range = XLSX.utils.decode_range(worksheet['!ref']);
-    console.log(`  - 解析范围: ${range.s.r}-${range.e.r}, ${range.s.c}-${range.e.c}`);
     
-    let totalCells = 0;
-    let cellsWithStyle = 0;
-    
-    // 先计算总数
-    for (let row = range.s.r; row <= range.e.r; row++) {
-      for (let col = range.s.c; col <= range.e.c; col++) {
-        totalCells++;
-      }
-    }
-    
-    // 然后处理样式，只打印前5行
-    let printedRows = 0;
-    for (let row = range.s.r; row <= range.e.r; row++) {
-      for (let col = range.s.c; col <= range.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-        const cell = worksheet[cellAddress];
-        
-        if (cell) {
-          // 只打印前5行的单元格信息
-          if (printedRows < 5) {
-            console.log(`  - 单元格 ${cellAddress}:`, {
-              hasValue: !!cell.v,
-              hasFormula: !!cell.f,
-              hasStyle: !!cell.s,
-              styleKeys: cell.s ? Object.keys(cell.s) : []
-            });
-          }
-          
-          if (cell && cell.s) {
-            cellsWithStyle++;
-            // 直接复制整个样式对象，确保不丢失任何样式属性
-            styles[cellAddress] = JSON.parse(JSON.stringify(cell.s));
-            
-            // 确保常见的样式属性都被保留
-            if (!styles[cellAddress].font && cell.s.font) {
-              styles[cellAddress].font = cell.s.font;
-            }
-            if (!styles[cellAddress].fill && cell.s.fill) {
-              styles[cellAddress].fill = cell.s.fill;
-            }
-            if (!styles[cellAddress].border && cell.s.border) {
-              styles[cellAddress].border = cell.s.border;
-            }
-            if (!styles[cellAddress].alignment && cell.s.alignment) {
-              styles[cellAddress].alignment = cell.s.alignment;
-            }
-            if (!styles[cellAddress].numFmt && cell.s.numFmt) {
-              styles[cellAddress].numFmt = cell.s.numFmt;
-            }
-          }
-        }
-      }
-      printedRows++;
-    }
-    
-    console.log(`  - 总单元格数: ${totalCells}, 有样式的单元格数: ${cellsWithStyle}`);
-  } else {
-    console.log(`  - 工作表没有!ref属性，无法提取样式`);
+  } catch (error) {
+    console.error('解析Excel文件失败:', error);
+    throw new Error(`解析Excel文件失败: ${error instanceof Error ? error.message : '未知错误'}`);
   }
-  
-  return styles;
-}
-
-// 提取公式信息
-function extractFormulas(worksheet: any): any {
-  const formulas: any = {};
-  
-  if (worksheet['!ref']) {
-    const range = XLSX.utils.decode_range(worksheet['!ref']);
-    
-    for (let row = range.s.r; row <= range.e.r; row++) {
-      for (let col = range.s.c; col <= range.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-        const cell = worksheet[cellAddress];
-        
-        if (cell && cell.f) {
-          formulas[cellAddress] = cell.f;
-        }
-      }
-    }
-  }
-  
-  return formulas;
-}
-
-// 提取工作表级别的属性
-function extractSheetProperties(worksheet: any): any {
-  const properties: any = {};
-  
-  console.log(`  - 开始提取工作表级别属性`);
-  console.log(`  - 工作表所有键:`, Object.keys(worksheet));
-  
-  // 提取所有以!开头的工作表级别属性
-  Object.keys(worksheet).forEach(key => {
-    if (key.startsWith('!') && key !== '!ref') {
-      console.log(`  - 提取属性 ${key}:`, worksheet[key]);
-      // 深度复制属性值，避免引用问题
-      properties[key] = JSON.parse(JSON.stringify(worksheet[key]));
-    }
-  });
-  
-  // 确保常见的工作表属性都被保留
-  const commonProps = ['!cols', '!rows', '!merges', '!protect', '!autofilter'];
-  commonProps.forEach(prop => {
-    if (worksheet[prop] && !properties[prop]) {
-      console.log(`  - 补充属性 ${prop}:`, worksheet[prop]);
-      properties[prop] = JSON.parse(JSON.stringify(worksheet[prop]));
-    }
-  });
-  
-  console.log(`  - 提取到的属性:`, Object.keys(properties));
-  
-  return properties;
 }
 
 // 保存Excel文件 - 保留所有格式信息
 async function saveExcel(workbook: any, _filename: string): Promise<ArrayBuffer> {
-  // 使用xlsx-js-style的write函数来保留样式
-  const wbout = XLSX.write(workbook, {
-    bookType: 'xlsx',
-    type: 'array',
-    cellStyles: true,
-    compression: true
-  });
+  console.log('=== 开始保存Excel文件 (使用ExcelJS) ===');
   
-  return wbout;
+  try {
+    // 使用ExcelJS的writeBuffer方法
+    const buffer = await workbook.xlsx.writeBuffer();
+    
+    console.log('Excel文件保存完成，文件大小:', buffer.byteLength, 'bytes');
+    return buffer;
+    
+  } catch (error) {
+    console.error('保存Excel文件失败:', error);
+    throw new Error(`保存Excel文件失败: ${error instanceof Error ? error.message : '未知错误'}`);
+  }
 }
 
 // 监听主线程消息

@@ -1,4 +1,6 @@
 // Excel处理辅助工具类
+import * as ExcelJS from 'exceljs';
+
 export class ExcelHelper {
   private worker: Worker;
   private messageId = 0;
@@ -16,8 +18,9 @@ export class ExcelHelper {
       totalCols: number;
       styles?: any;
       formulas?: any;
+      originalWorkbook?: ExcelJS.Workbook;
     }>;
-    workbook: any; // 完整的workbook对象
+    workbook: ExcelJS.Workbook; // 完整的workbook对象
   }> {
     return new Promise((resolve, reject) => {
       ++this.messageId;
@@ -47,7 +50,7 @@ export class ExcelHelper {
   }
 
   // 保存Excel文件，保留所有格式信息
-  async saveExcel(workbook: any, filename: string): Promise<ArrayBuffer> {
+  async saveExcel(workbook: ExcelJS.Workbook, filename: string): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
       ++this.messageId;
       

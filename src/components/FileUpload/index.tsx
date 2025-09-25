@@ -39,9 +39,22 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
       e.stopPropagation();
 
       const file = e.dataTransfer.files[0];
-      if (file && (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
-                   file.type === 'application/vnd.ms-excel')) {
-        onFileSelect(file);
+      if (file) {
+        // 检查文件扩展名
+        const fileName = file.name.toLowerCase();
+        const isExcelFile = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+        const isNumbersFile = fileName.endsWith('.numbers');
+        
+        if (isNumbersFile) {
+          alert('不支持.numbers文件格式。请将文件导出为Excel格式(.xlsx或.xls)后再上传。');
+          return;
+        }
+        
+        if (isExcelFile) {
+          onFileSelect(file);
+        } else {
+          alert('请选择Excel文件(.xlsx或.xls格式)');
+        }
       }
     },
     [onFileSelect]
@@ -56,7 +69,21 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
-        onFileSelect(file);
+        // 检查文件扩展名
+        const fileName = file.name.toLowerCase();
+        const isExcelFile = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+        const isNumbersFile = fileName.endsWith('.numbers');
+        
+        if (isNumbersFile) {
+          alert('不支持.numbers文件格式。请将文件导出为Excel格式(.xlsx或.xls)后再上传。');
+          return;
+        }
+        
+        if (isExcelFile) {
+          onFileSelect(file);
+        } else {
+          alert('请选择Excel文件(.xlsx或.xls格式)');
+        }
       }
     },
     [onFileSelect]
@@ -123,12 +150,14 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
           color="text.secondary"
           sx={{
             fontSize: '0.95rem',
-            maxWidth: '280px',
+            maxWidth: '320px',
             mx: 'auto',
             lineHeight: 1.5
           }}
         >
           支持.xlsx和.xls格式
+          <br />
+          不支持.numbers格式
           <br />
           拖拽文件到这里或点击选择
         </Typography>

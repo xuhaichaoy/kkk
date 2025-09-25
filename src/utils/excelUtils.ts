@@ -2,6 +2,8 @@
  * Excel数据处理工具函数
  */
 
+import * as ExcelJS from 'exceljs';
+
 export interface SheetData {
   name: string;
   data: any[][];
@@ -66,6 +68,26 @@ export const formatCellValue = (value: any): string => {
       hour12: false
     });
   }
+  
+  // 处理富文本对象
+  if (value && typeof value === 'object') {
+    if ('richText' in value) {
+      // 提取富文本中的纯文本内容
+      if (Array.isArray(value.richText)) {
+        return value.richText.map((item: any) => item.text || '').join('');
+      }
+      return value.richText?.text || '';
+    }
+    
+    // 处理其他对象类型
+    if ('result' in value) {
+      return value.result?.toString() || '';
+    }
+    
+    // 如果是其他对象，尝试转换为字符串
+    return JSON.stringify(value);
+  }
+  
   return value?.toString() || '';
 };
 
@@ -490,243 +512,107 @@ export interface ExportOptions {
   preserveFormulas: boolean;
 }
 
-/**
- * 验证Excel文件格式
- */
-const validateExcelBuffer = (buffer: ArrayBuffer): boolean => {
-  try {
-    // 检查文件头，Excel文件应该以PK开头（ZIP格式）
-    const uint8Array = new Uint8Array(buffer);
-    if (uint8Array.length < 4) {
-      console.error('Excel文件太小，长度:', uint8Array.length);
-      return false;
-    }
-    
-    // Excel文件是ZIP格式，应该以PK开头
-    const header = String.fromCharCode(uint8Array[0], uint8Array[1]);
-    const isValid = header === 'PK';
-    
-    if (!isValid) {
-      console.error('Excel文件头不正确，期望PK，实际:', header);
-      console.log('文件前16字节:', Array.from(uint8Array.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
-    }
-    
-    return isValid;
-  } catch (error) {
-    console.error('验证Excel文件格式失败:', error);
-    return false;
-  }
-};
+// 删除不再需要的旧函数
 
-/**
- * 对比两个工作表的样式信息
- */
-const compareSheetStyles = async (originalSheet: any, exportedSheet: any, sheetName: string): Promise<void> => {
-  const XLSX = await import('xlsx-js-style');
-  
-  console.log(`\n=== 对比工作表 ${sheetName} 的样式 ===`);
-  
-  // 对比工作表级别属性
-  const originalProps = Object.keys(originalSheet).filter(key => key.startsWith('!'));
-  const exportedProps = Object.keys(exportedSheet).filter(key => key.startsWith('!'));
-  
-  console.log(`原始工作表属性: ${originalProps.join(', ')}`);
-  console.log(`导出工作表属性: ${exportedProps.join(', ')}`);
-  
-  // 检查缺失的属性
-  const missingProps = originalProps.filter(prop => !exportedProps.includes(prop));
-  if (missingProps.length > 0) {
-    console.warn(`⚠️ 缺失的工作表属性: ${missingProps.join(', ')}`);
-  }
-  
-  // 对比列宽
-  if (originalSheet['!cols'] && exportedSheet['!cols']) {
-    const originalCols = JSON.stringify(originalSheet['!cols']);
-    const exportedCols = JSON.stringify(exportedSheet['!cols']);
-    if (originalCols !== exportedCols) {
-      console.warn(`⚠️ 列宽不匹配`);
-      console.log(`  原始: ${originalCols}`);
-      console.log(`  导出: ${exportedCols}`);
-    } else {
-      console.log(`✅ 列宽匹配`);
-    }
-  }
-  
-  // 对比行高
-  if (originalSheet['!rows'] && exportedSheet['!rows']) {
-    const originalRows = JSON.stringify(originalSheet['!rows']);
-    const exportedRows = JSON.stringify(exportedSheet['!rows']);
-    if (originalRows !== exportedRows) {
-      console.warn(`⚠️ 行高不匹配`);
-      console.log(`  原始: ${originalRows}`);
-      console.log(`  导出: ${exportedRows}`);
-    } else {
-      console.log(`✅ 行高匹配`);
-    }
-  }
-  
-  // 对比合并单元格
-  if (originalSheet['!merges'] && exportedSheet['!merges']) {
-    const originalMerges = JSON.stringify(originalSheet['!merges']);
-    const exportedMerges = JSON.stringify(exportedSheet['!merges']);
-    if (originalMerges !== exportedMerges) {
-      console.warn(`⚠️ 合并单元格不匹配`);
-      console.log(`  原始: ${originalMerges}`);
-      console.log(`  导出: ${exportedMerges}`);
-    } else {
-      console.log(`✅ 合并单元格匹配`);
-    }
-  }
-  
-  // 对比单元格样式
-  if (originalSheet['!ref'] && exportedSheet['!ref']) {
-    const originalRange = XLSX.utils.decode_range(originalSheet['!ref']);
-    let styledCellsMatch = 0;
-    let totalStyledCells = 0;
-    let styleMismatches: string[] = [];
-    
-    for (let row = originalRange.s.r; row <= originalRange.e.r; row++) {
-      for (let col = originalRange.s.c; col <= originalRange.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-        const originalCell = originalSheet[cellAddress];
-        const exportedCell = exportedSheet[cellAddress];
-        
-        if (originalCell && originalCell.s) {
-          totalStyledCells++;
-          if (exportedCell && exportedCell.s) {
-            const originalStyle = JSON.stringify(originalCell.s);
-            const exportedStyle = JSON.stringify(exportedCell.s);
-            if (originalStyle === exportedStyle) {
-              styledCellsMatch++;
-            } else {
-              styleMismatches.push(cellAddress);
-              if (styleMismatches.length <= 3) { // 只显示前3个不匹配的
-                console.warn(`⚠️ 单元格 ${cellAddress} 样式不匹配`);
-                console.log(`  原始:`, originalCell.s);
-                console.log(`  导出:`, exportedCell.s);
-              }
-            }
-          } else {
-            styleMismatches.push(cellAddress);
-            if (styleMismatches.length <= 3) {
-              console.warn(`⚠️ 单元格 ${cellAddress} 导出时丢失样式`);
-            }
-          }
-        }
-      }
-    }
-    
-    console.log(`单元格样式对比: ${styledCellsMatch}/${totalStyledCells} 匹配`);
-    if (styleMismatches.length > 3) {
-      console.warn(`⚠️ 还有 ${styleMismatches.length - 3} 个单元格样式不匹配`);
-    }
-  }
-  
-  console.log(`=== 工作表 ${sheetName} 样式对比完成 ===\n`);
-};
-
-/**
- * 调试Excel导出过程
- */
-const debugExcelExport = async (workbook: any, options: ExportOptions, XLSX: any, originalWorkbook?: any): Promise<void> => {
-  console.log('=== Excel导出调试信息 ===');
-  console.log('工作簿信息:', {
-    sheetNames: workbook.SheetNames,
-    sheetCount: workbook.SheetNames?.length || 0,
-    hasProps: !!workbook.Props,
-    hasCustprops: !!workbook.Custprops
-  });
-  
-  console.log('导出选项:', options);
-  
-  // 检查每个工作表
-  for (const sheetName of workbook.SheetNames || []) {
-    const sheet = workbook.Sheets[sheetName];
-    if (sheet) {
-      const range = sheet['!ref'];
-      const hasCols = !!sheet['!cols'];
-      const hasRows = !!sheet['!rows'];
-      const hasMerges = !!sheet['!merges'];
-      
-      console.log(`工作表 ${sheetName}:`, {
-        range,
-        hasData: !!range,
-        hasCols,
-        hasRows,
-        hasMerges,
-        cellCount: range ? XLSX.utils.decode_range(range).e.r * XLSX.utils.decode_range(range).e.c : 0
-      });
-      
-      // 检查样式信息
-      if (range) {
-        const decodedRange = XLSX.utils.decode_range(range);
-        let styledCells = 0;
-        for (let row = decodedRange.s.r; row <= decodedRange.e.r; row++) {
-          for (let col = decodedRange.s.c; col <= decodedRange.e.c; col++) {
-            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-            if (sheet[cellAddress] && sheet[cellAddress].s) {
-              styledCells++;
-            }
-          }
-        }
-        console.log(`  - 有样式的单元格数量: ${styledCells}`);
-      }
-      
-      // 如果有原始workbook，进行样式对比
-      if (originalWorkbook && originalWorkbook.Sheets[sheetName]) {
-        await compareSheetStyles(originalWorkbook.Sheets[sheetName], sheet, sheetName);
-      }
-    }
-  }
-  console.log('=== 调试信息结束 ===');
-};
+// 删除不再需要的旧函数
 
 /**
  * 从原始workbook创建工作簿，保留所有格式信息
  */
-const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: ExportOptions, XLSX: any) => {
+const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: ExportOptions): ExcelJS.Workbook => {
   // 使用第一个sheet的原始workbook作为基础
-  const baseWorkbook = selectedSheets[0].originalWorkbook;
+  const baseWorkbook = selectedSheets[0].originalWorkbook as ExcelJS.Workbook;
   
-  // 创建新的workbook，复制所有workbook级别的属性
-  const newWorkbook: any = {};
+  // 创建新的workbook
+  const newWorkbook = new ExcelJS.Workbook();
   
-  // 复制所有workbook级别的属性
-  Object.keys(baseWorkbook).forEach(key => {
-    if (key === 'SheetNames') {
-      // 只包含选中的工作表名称
-      newWorkbook[key] = selectedSheets.map(sheet => sheet.name);
-    } else if (key === 'Sheets') {
-      // 创建新的Sheets对象
-      newWorkbook[key] = {};
-    } else {
-      // 复制其他workbook级别的属性
-      newWorkbook[key] = baseWorkbook[key];
-    }
-  });
+  // 复制工作簿级别的属性
+  newWorkbook.creator = baseWorkbook.creator || 'Blink Excel Processor';
+  newWorkbook.lastModifiedBy = baseWorkbook.lastModifiedBy || 'Blink Excel Processor';
+  newWorkbook.created = baseWorkbook.created || new Date();
+  newWorkbook.modified = baseWorkbook.modified || new Date();
+  newWorkbook.company = baseWorkbook.company;
+  newWorkbook.title = baseWorkbook.title;
+  newWorkbook.subject = baseWorkbook.subject;
+  newWorkbook.keywords = baseWorkbook.keywords;
+  newWorkbook.description = baseWorkbook.description;
+  newWorkbook.category = baseWorkbook.category;
   
   // 为每个选中的sheet添加工作表
   selectedSheets.forEach(sheetData => {
-    const originalSheet = baseWorkbook.Sheets[sheetData.name];
+    // 检查 baseWorkbook 是否有 getWorksheet 方法
+    let originalWorksheet;
+    if (typeof baseWorkbook.getWorksheet === 'function') {
+      originalWorksheet = baseWorkbook.getWorksheet(sheetData.name);
+    } else if (baseWorkbook.worksheets) {
+      // 如果 getWorksheet 方法不存在，尝试从 worksheets 数组中查找
+      originalWorksheet = baseWorkbook.worksheets.find(ws => ws.name === sheetData.name);
+    }
     
-    if (originalSheet) {
+    if (originalWorksheet) {
       // 深度复制原始工作表，保留所有格式
-      const copiedSheet: any = {};
-      Object.keys(originalSheet).forEach(key => {
-        if (key.startsWith('!')) {
-          // 复制工作表级别的属性（列宽、行高、范围等）
-          copiedSheet[key] = originalSheet[key];
-        } else {
-          // 复制单元格数据
-          copiedSheet[key] = { ...originalSheet[key] };
-        }
+      const copiedWorksheet = newWorkbook.addWorksheet(sheetData.name);
+      
+      // 复制工作表级别的属性
+      if (originalWorksheet.properties) {
+        copiedWorksheet.properties = { ...originalWorksheet.properties };
+      }
+      
+      // 复制列设置
+      if (originalWorksheet.columns && originalWorksheet.columns.length > 0) {
+        copiedWorksheet.columns = originalWorksheet.columns.map(col => ({
+          ...col,
+          style: col.style ? { ...col.style } : undefined
+        }));
+      }
+      
+      // 复制合并单元格
+      if (originalWorksheet.model && originalWorksheet.model.merges) {
+        originalWorksheet.model.merges.forEach((merge: any) => {
+          copiedWorksheet.mergeCells(merge.top, merge.left, merge.bottom, merge.right);
+        });
+      }
+      
+      // 复制保护设置
+      if ((originalWorksheet as any).protection) {
+        (copiedWorksheet as any).protection = { ...(originalWorksheet as any).protection };
+      }
+      
+      // 复制单元格数据和样式
+      originalWorksheet.eachRow((row, rowNumber) => {
+        row.eachCell((cell, colNumber) => {
+          const newCell = copiedWorksheet.getCell(rowNumber, colNumber);
+          
+          // 复制值
+          if (cell.value !== null && cell.value !== undefined) {
+            if (typeof cell.value === 'object' && 'result' in cell.value) {
+              // 公式单元格
+              newCell.value = {
+                formula: cell.value.formula,
+                result: cell.value.result,
+                sharedFormula: undefined
+              } as any;
+    } else {
+              newCell.value = cell.value;
+            }
+          }
+          
+          // 复制样式
+          if (cell.style) {
+            newCell.style = { ...cell.style };
+          }
+        });
       });
       
-      newWorkbook.Sheets[sheetData.name] = copiedSheet;
+      // 复制行高
+      originalWorksheet.eachRow((row, rowNumber) => {
+        if (row.height) {
+          copiedWorksheet.getRow(rowNumber).height = row.height;
+        }
+      });
     } else {
-      // 如果没有原始工作表，则使用createWorksheet创建
-      const worksheet = createWorksheet(sheetData, options, XLSX);
-      newWorkbook.Sheets[sheetData.name] = worksheet;
+      // 如果没有原始工作表，则使用createWorksheetFromSheetData创建
+      createWorksheetFromSheetData(sheetData, options, newWorkbook);
     }
   });
   
@@ -734,17 +620,241 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
 };
 
 /**
- * 导出多个sheets为Excel文件（使用Tauri插件API）
+ * 从SheetData创建工作表 - 保留原始样式和公式
+ */
+const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOptions, targetWorkbook?: ExcelJS.Workbook): ExcelJS.Worksheet => {
+  console.log(`\n--- 从SheetData创建工作表: ${sheetData.name} ---`);
+  
+  // 如果有原始workbook，直接使用原始工作表
+  if (sheetData.originalWorkbook) {
+    let originalWorksheet;
+    if (typeof sheetData.originalWorkbook.getWorksheet === 'function') {
+      originalWorksheet = sheetData.originalWorkbook.getWorksheet(sheetData.name);
+    } else if (sheetData.originalWorkbook.worksheets) {
+      originalWorksheet = sheetData.originalWorkbook.worksheets.find((ws: any) => ws.name === sheetData.name);
+    }
+    
+    if (originalWorksheet) {
+      console.log(`使用原始工作表: ${sheetData.name}`);
+      return originalWorksheet;
+    }
+  }
+  
+  console.log(`使用SheetData重建工作表: ${sheetData.name}`);
+  
+  // 在目标工作簿中直接创建工作表
+  const worksheet = targetWorkbook ? targetWorkbook.addWorksheet(sheetData.name) : new ExcelJS.Workbook().addWorksheet(sheetData.name);
+  
+  // 设置工作表属性
+  worksheet.properties = {
+    defaultRowHeight: 15,
+    defaultColWidth: 10
+  } as any;
+  
+  console.log(`开始添加数据，共 ${sheetData.data.length} 行`);
+  
+        // 添加数据到工作表
+        sheetData.data.forEach((row, rowIndex) => {
+          const worksheetRow = worksheet.getRow(rowIndex + 1);
+          
+          row.forEach((cell, colIndex) => {
+            const cellAddress = worksheetRow.getCell(colIndex + 1);
+            
+            // 检查是否有公式
+            const cellKey = `${rowIndex + 1}_${colIndex + 1}`;
+            if (sheetData.formulas && sheetData.formulas[cellKey]) {
+              // 公式单元格
+              cellAddress.value = {
+                formula: sheetData.formulas[cellKey],
+                result: cell,
+                sharedFormula: undefined
+              } as any;
+            } else {
+              cellAddress.value = cell;
+            }
+            
+            // 样式将在数据添加完成后统一处理
+          });
+    
+    // 每100行打印一次进度
+    if ((rowIndex + 1) % 100 === 0) {
+      console.log(`已处理 ${rowIndex + 1} 行数据`);
+    }
+  });
+  
+  console.log(`数据添加完成，开始设置格式`);
+  
+  // 处理所有样式信息，包括空单元格的样式
+  if (sheetData.styles) {
+    console.log(`开始处理所有单元格样式，共 ${Object.keys(sheetData.styles).length} 个样式`);
+    
+    Object.keys(sheetData.styles).forEach(cellKey => {
+      const [rowStr, colStr] = cellKey.split('_');
+      const rowIndex = parseInt(rowStr) - 1;
+      const colIndex = parseInt(colStr) - 1;
+      
+      // 获取单元格
+      const cellAddress = worksheet.getCell(rowIndex + 1, colIndex + 1);
+      const style = sheetData.styles[cellKey];
+      
+      // 应用样式 - 无论单元格是否有值都要应用样式
+      if (style) {
+        // 应用字体样式
+        if (style.font) {
+          cellAddress.font = {
+            name: style.font.name,
+            size: style.font.size,
+            bold: style.font.bold,
+            italic: style.font.italic,
+            underline: style.font.underline,
+            strike: style.font.strike,
+            color: style.font.color
+          };
+        }
+        
+        // 应用填充样式
+        if (style.fill) {
+          const fillStyle: any = {};
+          if (style.fill.type) {
+            fillStyle.type = style.fill.type;
+          }
+          if (style.fill.pattern) {
+            fillStyle.pattern = style.fill.pattern;
+          }
+          if (style.fill.fgColor) {
+            fillStyle.fgColor = {
+              argb: style.fill.fgColor.argb,
+              theme: style.fill.fgColor.theme
+            };
+          }
+          if (style.fill.bgColor) {
+            fillStyle.bgColor = {
+              argb: style.fill.bgColor.argb,
+              theme: style.fill.bgColor.theme
+            };
+          }
+          cellAddress.fill = fillStyle;
+        }
+        
+        // 应用边框样式
+        if (style.border) {
+          const borderStyle: any = {};
+          
+          if (style.border.top) {
+            borderStyle.top = {
+              style: style.border.top.style,
+              color: style.border.top.color
+            };
+          }
+          if (style.border.left) {
+            borderStyle.left = {
+              style: style.border.left.style,
+              color: style.border.left.color
+            };
+          }
+          if (style.border.bottom) {
+            borderStyle.bottom = {
+              style: style.border.bottom.style,
+              color: style.border.bottom.color
+            };
+          }
+          if (style.border.right) {
+            borderStyle.right = {
+              style: style.border.right.style,
+              color: style.border.right.color
+            };
+          }
+          if (style.border.diagonal) {
+            borderStyle.diagonal = {
+              style: style.border.diagonal.style,
+              color: style.border.diagonal.color
+            };
+          }
+          
+          cellAddress.border = borderStyle;
+        }
+        
+        // 应用对齐样式
+        if (style.alignment) {
+          cellAddress.alignment = {
+            horizontal: style.alignment.horizontal,
+            vertical: style.alignment.vertical,
+            wrapText: style.alignment.wrapText,
+            textRotation: style.alignment.textRotation,
+            indent: style.alignment.indent,
+            readingOrder: style.alignment.readingOrder
+          };
+        }
+        
+        // 应用数字格式
+        if (style.numFmt) {
+          cellAddress.numFmt = style.numFmt;
+        }
+        
+        // 应用保护样式
+        if (style.protection) {
+          cellAddress.protection = {
+            locked: style.protection.locked,
+            hidden: style.protection.hidden
+          };
+        }
+      }
+    });
+    
+  }
+  
+  // 设置列宽
+  if (sheetData.properties && sheetData.properties.columns) {
+    sheetData.properties.columns.forEach((col: any, index: number) => {
+      if (col.width) {
+        worksheet.getColumn(index + 1).width = col.width;
+      }
+      if (col.hidden) {
+        worksheet.getColumn(index + 1).hidden = col.hidden;
+      }
+    });
+    } else {
+    // 默认列宽设置
+    const colWidths = sheetData.data[0]?.map((header, index) => {
+      const maxLength = Math.max(
+        String(header).length,
+        ...sheetData.data.slice(1).map(row => String(row[index] || '').length)
+      );
+      return Math.min(Math.max(maxLength, 10), 50);
+    }) || [];
+    
+    colWidths.forEach((width, index) => {
+      worksheet.getColumn(index + 1).width = width;
+    });
+  }
+  
+  // 设置行高
+  if (sheetData.properties && sheetData.properties.rows) {
+    sheetData.properties.rows.forEach((row: any, index: number) => {
+      if (row && row.height) {
+        worksheet.getRow(index + 1).height = row.height;
+      }
+    });
+  }
+  
+  // 设置合并单元格
+  if (sheetData.properties && sheetData.properties.merges) {
+    sheetData.properties.merges.forEach((merge: any) => {
+      worksheet.mergeCells(merge.top, merge.left, merge.bottom, merge.right);
+    });
+  }
+  
+  return worksheet;
+};
+
+/**
+ * 导出多个sheets为Excel文件（使用ExcelJS）
  */
 export const exportToExcel = async (
   selectedSheets: SheetData[],
   options: ExportOptions
 ): Promise<void> => {
   try {
-    // 动态导入xlsx-js-style
-    const XLSX = await import('xlsx-js-style');
-    
-    // 动态导入Tauri插件API
     let tauriDialog;
     let tauriFs;
     
@@ -753,13 +863,13 @@ export const exportToExcel = async (
       tauriFs = await import('@tauri-apps/plugin-fs');
     } catch (err) {
       console.warn('Tauri API不可用，回退到浏览器下载', err);
-      return exportToExcelBrowser(selectedSheets, options, XLSX);
+      return exportToExcelBrowser(selectedSheets, options);
     }
     
     // 如果选择分别导出每个sheet为单独文件
     if (options.separateFiles) {
       for (const sheet of selectedSheets) {
-        await exportSingleSheetTauri(sheet, options, XLSX, tauriDialog, tauriFs);
+        await exportSingleSheetTauri(sheet, options, tauriDialog, tauriFs);
       }
       return;
     }
@@ -767,42 +877,29 @@ export const exportToExcel = async (
     // 检查是否所有sheet都有原始workbook信息
     const hasOriginalWorkbook = selectedSheets.every(sheet => sheet.originalWorkbook);
     
-    let workbook: any;
+    let workbook: ExcelJS.Workbook;
     
     if (hasOriginalWorkbook) {
       // 使用原始workbook对象，保留所有格式信息
-      workbook = createWorkbookFromOriginal(selectedSheets, options, XLSX);
+      workbook = createWorkbookFromOriginal(selectedSheets, options);
     } else {
-      // 使用默认方式创建工作簿
-      workbook = XLSX.utils.book_new();
+      // 创建新的工作簿
+      workbook = new ExcelJS.Workbook();
+      
+      // 设置工作簿属性
+      workbook.creator = 'Blink Excel Processor';
+      workbook.lastModifiedBy = 'Blink Excel Processor';
+      workbook.created = new Date();
+      workbook.modified = new Date();
       
       // 为每个选中的sheet创建工作表
       selectedSheets.forEach(sheetData => {
-        // 创建工作表
-        const worksheet = createWorksheet(sheetData, options, XLSX);
-        
-        // 添加工作表到工作簿
-        XLSX.utils.book_append_sheet(workbook, worksheet, sheetData.name);
+        createWorksheetFromSheetData(sheetData, options, workbook);
       });
     }
     
-    // 调试信息
-    const originalWorkbook = hasOriginalWorkbook ? selectedSheets[0].originalWorkbook : undefined;
-    await debugExcelExport(workbook, options, XLSX, originalWorkbook);
-    
     // 生成Excel文件
-    const excelBuffer = XLSX.write(workbook, { 
-      bookType: 'xlsx', 
-      type: 'array',
-      compression: true,
-      cellStyles: true,
-      cellDates: true
-    });
-    
-    // 验证生成的Excel文件格式
-    if (!validateExcelBuffer(excelBuffer)) {
-      throw new Error('生成的Excel文件格式不正确');
-    }
+    const excelBuffer = await workbook.xlsx.writeBuffer();
     
     // 使用Tauri的对话框API保存文件
     const filePath = await tauriDialog.save({
@@ -815,14 +912,11 @@ export const exportToExcel = async (
     });
     
     if (filePath) {
-      // 使用Tauri的文件系统API写入文件
-      // 确保excelBuffer是正确的Uint8Array格式
       const uint8Array = new Uint8Array(excelBuffer);
       await tauriFs.writeFile(filePath, uint8Array);
     }
     
   } catch (error) {
-    console.error('导出Excel文件失败:', error);
     // 提供更详细的错误信息
     if (error instanceof Error) {
       throw new Error(`导出Excel文件失败: ${error.message}`);
@@ -833,49 +927,28 @@ export const exportToExcel = async (
 };
 
 /**
- * 导出单个sheet为Excel文件（使用Tauri插件API）
+ * 导出单个sheet为Excel文件（使用ExcelJS）
  */
 const exportSingleSheetTauri = async (
   sheetData: SheetData,
   options: ExportOptions,
-  XLSX: any,
   tauriDialog: any,
   tauriFs: any
 ): Promise<void> => {
   // 创建新工作簿
-  const workbook = XLSX.utils.book_new();
+  const workbook = new ExcelJS.Workbook();
+  
+  // 设置工作簿属性
+  workbook.creator = 'Blink Excel Processor';
+  workbook.lastModifiedBy = 'Blink Excel Processor';
+  workbook.created = new Date();
+  workbook.modified = new Date();
   
   // 创建工作表
-  const worksheet = createWorksheet(sheetData, options, XLSX);
-  
-  // 添加工作表到工作簿
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetData.name);
+  createWorksheetFromSheetData(sheetData, options, workbook);
   
   // 生成Excel文件
-  const excelBuffer = XLSX.write(workbook, { 
-    bookType: 'xlsx', 
-    type: 'array',
-    compression: true,
-    cellStyles: true,
-    cellFormula: true,
-    cellDates: true,
-    cellNF: true,
-    cellText: false,
-    cellHTML: false,
-    sheetStubs: false,
-    bookDeps: false,
-    bookFiles: false,
-    bookProps: true,
-    bookSheets: true,
-    bookVBA: false,
-    password: '',
-    WTF: false
-  });
-  
-  // 验证生成的Excel文件格式
-  if (!validateExcelBuffer(excelBuffer)) {
-    throw new Error('生成的Excel文件格式不正确');
-  }
+  const excelBuffer = await workbook.xlsx.writeBuffer();
   
   // 使用Tauri的对话框API保存文件
   const fileName = `${options.fileName}_${sheetData.name}`;
@@ -890,7 +963,6 @@ const exportSingleSheetTauri = async (
   
   if (filePath) {
     // 使用Tauri的文件系统API写入文件
-    // 确保excelBuffer是正确的Uint8Array格式
     const uint8Array = new Uint8Array(excelBuffer);
     await tauriFs.writeFile(filePath, uint8Array);
   }
@@ -901,46 +973,24 @@ const exportSingleSheetTauri = async (
  */
 const exportToExcelBrowser = async (
   selectedSheets: SheetData[],
-  options: ExportOptions,
-  XLSX: any
+  options: ExportOptions
 ): Promise<void> => {
-  // 导出为单个Excel文件
-  const workbook = XLSX.utils.book_new();
+  // 创建新工作簿
+  const workbook = new ExcelJS.Workbook();
+  
+  // 设置工作簿属性
+  workbook.creator = 'Blink Excel Processor';
+  workbook.lastModifiedBy = 'Blink Excel Processor';
+  workbook.created = new Date();
+  workbook.modified = new Date();
   
   // 为每个选中的sheet创建工作表
   selectedSheets.forEach(sheetData => {
-    // 创建工作表
-    const worksheet = createWorksheet(sheetData, options, XLSX);
-    
-    // 添加工作表到工作簿
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetData.name);
+    createWorksheetFromSheetData(sheetData, options, workbook);
   });
   
   // 生成Excel文件
-  const excelBuffer = XLSX.write(workbook, { 
-    bookType: 'xlsx', 
-    type: 'array',
-    compression: true,
-    cellStyles: true,
-    cellFormula: true,
-    cellDates: true,
-    cellNF: true,
-    cellText: false,
-    cellHTML: false,
-    sheetStubs: false,
-    bookDeps: false,
-    bookFiles: false,
-    bookProps: true,
-    bookSheets: true,
-    bookVBA: false,
-    password: '',
-    WTF: false
-  });
-  
-  // 验证生成的Excel文件格式
-  if (!validateExcelBuffer(excelBuffer)) {
-    throw new Error('生成的Excel文件格式不正确');
-  }
+  const excelBuffer = await workbook.xlsx.writeBuffer();
   
   // 创建Blob对象
   const blob = new Blob([excelBuffer], { 
@@ -965,244 +1015,70 @@ const exportToExcelBrowser = async (
   }, 100);
 };
 
-/**
- * 创建工作表 - 保留原始样式和公式
- */
-const createWorksheet = (sheetData: SheetData, options: ExportOptions, XLSX: any) => {
-  // 如果sheetData包含原始样式和公式信息，则使用原始数据重建工作表
-  if (sheetData.styles || sheetData.formulas) {
-    return createWorksheetFromOriginal(sheetData, options, XLSX);
-  }
-  
-  // 否则使用默认方式创建工作表
-  return createWorksheetDefault(sheetData, options, XLSX);
-};
-
-/**
- * 从原始数据创建工作表，保留所有样式和公式
- */
-const createWorksheetFromOriginal = (sheetData: SheetData, options: ExportOptions, XLSX: any) => {
-  console.log(`\n--- 从原始数据创建工作表: ${sheetData.name} ---`);
-  
-  // 如果有原始workbook，直接使用原始工作表
-  if (sheetData.originalWorkbook && sheetData.originalWorkbook.Sheets[sheetData.name]) {
-    console.log(`使用原始工作表: ${sheetData.name}`);
-    const originalWorksheet = sheetData.originalWorkbook.Sheets[sheetData.name];
-    
-    // 创建新的工作表，复制所有属性
-    const newWorksheet: any = {};
-    
-    // 复制所有单元格数据
-    Object.keys(originalWorksheet).forEach(key => {
-      if (key.startsWith('!')) {
-        // 复制工作表级别的属性
-        newWorksheet[key] = JSON.parse(JSON.stringify(originalWorksheet[key]));
-      } else {
-        // 复制单元格数据
-        newWorksheet[key] = JSON.parse(JSON.stringify(originalWorksheet[key]));
-      }
-    });
-    
-    console.log(`原始工作表属性数量: ${Object.keys(originalWorksheet).filter(k => k.startsWith('!')).length}`);
-    console.log(`新工作表属性数量: ${Object.keys(newWorksheet).filter(k => k.startsWith('!')).length}`);
-    
-    return newWorksheet;
-  }
-  
-  console.log(`使用样式信息重建工作表: ${sheetData.name}`);
-  
-  // 如果没有原始工作表，使用样式信息重建
-  const worksheet = XLSX.utils.aoa_to_sheet(sheetData.data);
-  
-  // 恢复原始样式
-  if (sheetData.styles) {
-    console.log(`恢复 ${Object.keys(sheetData.styles).length} 个单元格的样式`);
-    Object.keys(sheetData.styles).forEach(cellAddress => {
-      if (worksheet[cellAddress]) {
-        worksheet[cellAddress].s = sheetData.styles[cellAddress];
-      }
-    });
-  }
-  
-  // 恢复原始公式
-  if (sheetData.formulas && options.preserveFormulas) {
-    console.log(`恢复 ${Object.keys(sheetData.formulas).length} 个单元格的公式`);
-    Object.keys(sheetData.formulas).forEach(cellAddress => {
-      if (worksheet[cellAddress]) {
-        worksheet[cellAddress].f = sheetData.formulas[cellAddress];
-        // 清除计算值，让Excel重新计算公式
-        delete worksheet[cellAddress].v;
-      }
-    });
-  }
-  
-  // 恢复工作表级别的属性（列宽、行高、合并单元格等）
-  if (sheetData.properties) {
-    console.log(`恢复工作表级别属性: ${Object.keys(sheetData.properties).join(', ')}`);
-    Object.keys(sheetData.properties).forEach(key => {
-      worksheet[key] = JSON.parse(JSON.stringify(sheetData.properties[key]));
-    });
-  }
-  
-  console.log(`--- 工作表 ${sheetData.name} 创建完成 ---\n`);
-  return worksheet;
-};
-
-/**
- * 使用默认样式创建工作表（向后兼容）
- */
-const createWorksheetDefault = (sheetData: SheetData, options: ExportOptions, XLSX: any) => {
-  // 创建工作表数据
-  const worksheet = XLSX.utils.aoa_to_sheet(sheetData.data);
-  
-  // 设置列宽
-  const colWidths = sheetData.data[0]?.map((header, index) => {
-    const maxLength = Math.max(
-      String(header).length,
-      ...sheetData.data.slice(1).map(row => String(row[index] || '').length)
-    );
-    return { wch: Math.min(Math.max(maxLength, 10), 50) };
-  }) || [];
-  
-  worksheet['!cols'] = colWidths;
-  
-  // 设置表头样式
-  if (sheetData.data.length > 0) {
-    const headerRange = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-    for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
-      if (!worksheet[cellAddress]) continue;
-      
-      worksheet[cellAddress].s = {
-        font: { bold: true, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "366092" } },
-        alignment: { horizontal: "center", vertical: "center" },
-        border: {
-          top: { style: "thin", color: { rgb: "000000" } },
-          bottom: { style: "thin", color: { rgb: "000000" } },
-          left: { style: "thin", color: { rgb: "000000" } },
-          right: { style: "thin", color: { rgb: "000000" } }
-        }
-      };
-    }
-  }
-  
-  // 设置数据行样式
-  if (sheetData.data.length > 1) {
-    const dataRange = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-    for (let row = dataRange.s.r + 1; row <= dataRange.e.r; row++) {
-      for (let col = dataRange.s.c; col <= dataRange.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-        if (!worksheet[cellAddress]) continue;
-        
-        // 检查是否是公式
-        const cellValue = worksheet[cellAddress].v;
-        if (options.preserveFormulas && typeof cellValue === 'string' && cellValue.startsWith('=')) {
-          worksheet[cellAddress].f = cellValue.substring(1);
-        }
-        
-        worksheet[cellAddress].s = {
-          alignment: { horizontal: "center", vertical: "center" },
-          border: {
-            top: { style: "thin", color: { rgb: "CCCCCC" } },
-            bottom: { style: "thin", color: { rgb: "CCCCCC" } },
-            left: { style: "thin", color: { rgb: "CCCCCC" } },
-            right: { style: "thin", color: { rgb: "CCCCCC" } }
-          }
-        };
-        
-        // 偶数行设置背景色
-        if (row % 2 === 0) {
-          worksheet[cellAddress].s.fill = { fgColor: { rgb: "F8F9FA" } };
-        }
-      }
-    }
-  }
-  
-  return worksheet;
-};
+// 删除不再需要的旧函数
 
 /**
  * 验证导出的Excel文件样式是否正确保留
  */
-export const validateExportedStyles = async (originalWorkbook: any, exportedWorkbook: any): Promise<boolean> => {
-  const XLSX = await import('xlsx-js-style');
-  
-  console.log('=== 验证导出样式 ===');
+export const validateExportedStyles = async (originalWorkbook: ExcelJS.Workbook, exportedWorkbook: ExcelJS.Workbook): Promise<boolean> => {
   
   let allStylesPreserved = true;
   
   // 检查每个工作表
-  exportedWorkbook.SheetNames?.forEach((sheetName: string) => {
-    const originalSheet = originalWorkbook.Sheets[sheetName];
-    const exportedSheet = exportedWorkbook.Sheets[sheetName];
+  exportedWorkbook.worksheets.forEach(worksheet => {
+    const originalWorksheet = originalWorkbook.getWorksheet(worksheet.name);
     
-    if (!originalSheet || !exportedSheet) {
-      console.warn(`工作表 ${sheetName} 在原始或导出文件中不存在`);
+    if (!originalWorksheet) {
+      console.warn(`工作表 ${worksheet.name} 在原始文件中不存在`);
       return;
     }
     
-    console.log(`检查工作表: ${sheetName}`);
-    
     // 检查列宽
-    const originalCols = originalSheet['!cols'];
-    const exportedCols = exportedSheet['!cols'];
+    const originalCols = originalWorksheet.columns;
+    const exportedCols = worksheet.columns;
     if (originalCols && exportedCols) {
       const colsMatch = JSON.stringify(originalCols) === JSON.stringify(exportedCols);
-      console.log(`  列宽匹配: ${colsMatch}`);
       if (!colsMatch) allStylesPreserved = false;
     }
     
     // 检查行高
-    const originalRows = originalSheet['!rows'];
-    const exportedRows = exportedSheet['!rows'];
+    const originalRows = originalWorksheet.rowCount;
+    const exportedRows = worksheet.rowCount;
     if (originalRows && exportedRows) {
-      const rowsMatch = JSON.stringify(originalRows) === JSON.stringify(exportedRows);
-      console.log(`  行高匹配: ${rowsMatch}`);
+      const rowsMatch = originalRows === exportedRows;
       if (!rowsMatch) allStylesPreserved = false;
     }
     
     // 检查合并单元格
-    const originalMerges = originalSheet['!merges'];
-    const exportedMerges = exportedSheet['!merges'];
+    const originalMerges = originalWorksheet.model?.merges;
+    const exportedMerges = worksheet.model?.merges;
     if (originalMerges && exportedMerges) {
       const mergesMatch = JSON.stringify(originalMerges) === JSON.stringify(exportedMerges);
-      console.log(`  合并单元格匹配: ${mergesMatch}`);
       if (!mergesMatch) allStylesPreserved = false;
     }
     
     // 检查单元格样式
-    if (originalSheet['!ref'] && exportedSheet['!ref']) {
-      const originalRange = XLSX.utils.decode_range(originalSheet['!ref']);
-      
       let styledCellsMatch = 0;
       let totalCells = 0;
       
-      for (let row = originalRange.s.r; row <= originalRange.e.r; row++) {
-        for (let col = originalRange.s.c; col <= originalRange.e.c; col++) {
-          const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+    originalWorksheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell, colNumber) => {
           totalCells++;
           
-          const originalCell = originalSheet[cellAddress];
-          const exportedCell = exportedSheet[cellAddress];
+        const exportedCell = worksheet.getCell(rowNumber, colNumber);
           
-          if (originalCell && originalCell.s && exportedCell && exportedCell.s) {
-            const stylesMatch = JSON.stringify(originalCell.s) === JSON.stringify(exportedCell.s);
+        if (cell.style && exportedCell.style) {
+          const stylesMatch = JSON.stringify(cell.style) === JSON.stringify(exportedCell.style);
             if (stylesMatch) styledCellsMatch++;
             else {
-              console.warn(`  单元格 ${cellAddress} 样式不匹配`);
-              console.warn(`    原始:`, originalCell.s);
-              console.warn(`    导出:`, exportedCell.s);
+            console.warn(`  单元格 ${rowNumber},${colNumber} 样式不匹配`);
             }
           }
-        }
-      }
+      });
+    });
       
-      console.log(`  单元格样式匹配: ${styledCellsMatch}/${totalCells}`);
       if (styledCellsMatch < totalCells) allStylesPreserved = false;
-    }
   });
   
-  console.log(`=== 样式保留验证结果: ${allStylesPreserved ? '通过' : '失败'} ===`);
   return allStylesPreserved;
 };

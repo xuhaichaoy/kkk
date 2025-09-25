@@ -200,6 +200,16 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     setError(null);
 
     try {
+      // 检查文件格式
+      const fileName = file.name.toLowerCase();
+      const isNumbersFile = fileName.endsWith('.numbers');
+      
+      if (isNumbersFile) {
+        setError('不支持.numbers文件格式。请将文件导出为Excel格式(.xlsx或.xls)后再上传。');
+        setLoading(false);
+        return;
+      }
+
       const worker = new Worker(new URL('../../workers/excelWorker.ts', import.meta.url), {
         type: 'module'
       });
@@ -218,6 +228,14 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
           // Worker返回的是 { sheets: [], workbook: {} } 结构
           const sheets = e.data.data.sheets || e.data.data;
           const workbook = e.data.data.workbook;
+          
+          // 检查是否有工作表
+          if (!sheets || sheets.length === 0) {
+            setError('文件解析成功但没有找到工作表数据。请检查文件是否为有效的Excel文件。');
+            setLoading(false);
+            worker.terminate();
+            return;
+          }
           
           // 为每个sheet添加原始workbook引用
           const sheetsWithWorkbook = sheets.map((sheet: any) => ({
@@ -265,7 +283,21 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
           没有找到Excel数据
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          请检查文件格式是否正确
+          可能的原因：
+        </Typography>
+        <Box component="ul" sx={{ textAlign: 'left', mt: 2, pl: 3 }}>
+          <Typography component="li" variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            文件格式不支持（如.numbers文件）
+          </Typography>
+          <Typography component="li" variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            文件损坏或为空
+          </Typography>
+          <Typography component="li" variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            文件被密码保护
+          </Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          请确保文件是有效的.xlsx或.xls格式
         </Typography>
       </Box>
     );
