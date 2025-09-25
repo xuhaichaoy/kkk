@@ -18,6 +18,7 @@ import {
   exportToExcel,
   ExportOptions
 } from '../../utils/excelUtils';
+import { validateFileFormat } from '../../utils/commonUtils';
 
 interface ExcelViewerProps {
   file: File | null;
@@ -201,11 +202,9 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
 
     try {
       // 检查文件格式
-      const fileName = file.name.toLowerCase();
-      const isNumbersFile = fileName.endsWith('.numbers');
-      
-      if (isNumbersFile) {
-        setError('不支持.numbers文件格式。请将文件导出为Excel格式(.xlsx或.xls)后再上传。');
+      const validation = validateFileFormat(file);
+      if (!validation.isValid) {
+        setError(validation.error || '文件格式不支持');
         setLoading(false);
         return;
       }
@@ -403,7 +402,6 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
           enableExportExcel={sheets.length > 0}
           onAdd={handleAddRow}
           onDelete={handleDeleteRows}
-          onExport={handleExport}
           onSplit={handleSplitTable}
           onMerge={handleMergeSheets}
           onCompare={handleCompareSheets}

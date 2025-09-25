@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Typography, Chip } from '@mui/material';
 import { styled } from '@mui/material/styles';
+import { formatFileSize, formatFileType, formatLastModified } from '../../utils/commonUtils';
 
 interface FileInfoProps {
   file: File;
@@ -28,29 +29,6 @@ const FileInfo: React.FC<FileInfoProps> = ({
   showLastModified = false,
   variant = 'default'
 }) => {
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const formatFileType = (fileName: string): string => {
-    const extension = fileName.split('.').pop()?.toUpperCase();
-    return extension || '未知';
-  };
-
-  const formatLastModified = (timestamp: number): string => {
-    const date = new Date(timestamp);
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
 
   if (variant === 'compact') {
     return (

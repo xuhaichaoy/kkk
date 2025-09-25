@@ -156,16 +156,66 @@ export const splitTableByColumn = (
   
   const uniqueValues = getColumnUniqueValues(dataRows, columnIndex, currentSheet, editedRows);
   
+  console.log(`拆分表格: ${sheetData.name}, 列索引: ${columnIndex}, 唯一值: ${uniqueValues.length}个`);
+  console.log(`原始样式数量: ${sheetData.styles ? Object.keys(sheetData.styles).length : 0}`);
+  
   return uniqueValues.map(value => {
-    const filteredRows = rowsWithEdits.filter(row => row[columnIndex]?.toString() === value);
+    // 首先找到所有匹配的行索引
+    const matchingRowIndices: number[] = [];
+    rowsWithEdits.forEach((row, index) => {
+      if (row[columnIndex]?.toString() === value) {
+        matchingRowIndices.push(index);
+      }
+    });
+    
+    const filteredRows = matchingRowIndices.map(index => rowsWithEdits[index]);
     const baseName = `${sheetData.name}_${value}`;
     const uniqueName = generateUniqueSheetName(baseName, existingSheets);
+    
+    console.log(`处理值 "${value}": 过滤后行数 ${filteredRows.length}, 匹配的行索引: [${matchingRowIndices.join(', ')}]`);
+    
+    // 创建新的样式对象，只保留相关行的样式
+    const newStyles: any = {};
+    let preservedStylesCount = 0;
+    
+    if (sheetData.styles) {
+      // 保留表头样式（第1行）
+      Object.keys(sheetData.styles).forEach(cellKey => {
+        const [rowStr, colStr] = cellKey.split('_');
+        const rowIndex = parseInt(rowStr);
+        const colIndex = parseInt(colStr);
+        
+        // 保留表头样式
+        if (rowIndex === 1) {
+          newStyles[cellKey] = sheetData.styles[cellKey];
+          preservedStylesCount++;
+        } else {
+          // 检查数据行是否在匹配的行索引中
+          const dataRowIndex = rowIndex - 1; // 转换为数据行索引（从0开始）
+          const matchingIndex = matchingRowIndices.indexOf(dataRowIndex);
+          
+          if (matchingIndex !== -1) {
+            // 计算新行号（表头 + 匹配行的位置）
+            const newRowIndex = matchingIndex + 2; // +2因为表头占第1行，数组索引从0开始
+            const newCellKey = `${newRowIndex}_${colIndex}`;
+            newStyles[newCellKey] = sheetData.styles[cellKey];
+            preservedStylesCount++;
+          }
+        }
+      });
+    }
+    
+    console.log(`值 "${value}" 保留的样式数量: ${preservedStylesCount}`);
     
     return {
       name: uniqueName,
       data: [headers, ...filteredRows],
       totalRows: filteredRows.length,
-      totalCols: headers.length
+      totalCols: headers.length,
+      styles: newStyles,
+      formulas: sheetData.formulas, // 保留公式信息
+      properties: sheetData.properties, // 保留工作表属性
+      originalWorkbook: sheetData.originalWorkbook // 保留原始workbook引用
     };
   });
 };
@@ -231,6 +281,10 @@ export const mergeSheets = (
 
   // 创建合并后的数据
   const mergedData: any[][] = [allColumns]; // 表头
+  
+  // 创建合并后的样式对象
+  const mergedStyles: any = {};
+  let currentRowIndex = 1; // 从第2行开始（第1行是表头）
 
   // 合并每个sheet的数据
   sheets.forEach(sheet => {
@@ -250,8 +304,56 @@ export const mergeSheets = (
       });
 
       mergedData.push(mergedRow);
+      
+      // 处理样式信息
+      if (sheet.styles) {
+        const originalRowIndex = sheetRows.indexOf(row) + 2; // 原始行号（+2因为表头占第1行）
+        
+        // 复制该行的所有样式
+        Object.keys(sheet.styles).forEach(cellKey => {
+          const [rowStr, colStr] = cellKey.split('_');
+          const originalRow = parseInt(rowStr);
+          const colIndex = parseInt(colStr);
+          
+          // 如果是当前处理的行
+          if (originalRow === originalRowIndex) {
+            const header = sheetHeaders[colIndex];
+            if (header) {
+              // 找到该列在合并后表格中的位置
+              const targetColIndex = allColumns.indexOf(header);
+              if (targetColIndex !== -1) {
+                const newCellKey = `${currentRowIndex + 1}_${targetColIndex + 1}`;
+                mergedStyles[newCellKey] = sheet.styles[cellKey];
+              }
+            }
+          }
+        });
+      }
+      
+      currentRowIndex++;
     });
   });
+
+  // 处理表头样式（使用第一个sheet的表头样式）
+  if (sheets[0].styles) {
+    Object.keys(sheets[0].styles).forEach(cellKey => {
+      const [rowStr, colStr] = cellKey.split('_');
+      const rowIndex = parseInt(rowStr);
+      const colIndex = parseInt(colStr);
+      
+      // 如果是表头行
+      if (rowIndex === 1) {
+        const header = sheets[0].data[0][colIndex];
+        if (header) {
+          const targetColIndex = allColumns.indexOf(header);
+          if (targetColIndex !== -1) {
+            const newCellKey = `1_${targetColIndex + 1}`;
+            mergedStyles[newCellKey] = sheets[0].styles[cellKey];
+          }
+        }
+      }
+    });
+  }
 
   // 生成唯一的sheet名称
   const uniqueName = generateUniqueSheetName(mergedSheetName, existingSheets);
@@ -260,7 +362,11 @@ export const mergeSheets = (
     name: uniqueName,
     data: mergedData,
     totalRows: mergedData.length - 1,
-    totalCols: allColumns.length
+    totalCols: allColumns.length,
+    styles: mergedStyles,
+    formulas: sheets[0].formulas, // 保留第一个sheet的公式信息
+    properties: sheets[0].properties, // 保留第一个sheet的工作表属性
+    originalWorkbook: sheets[0].originalWorkbook // 保留第一个sheet的原始workbook引用
   };
 };
 

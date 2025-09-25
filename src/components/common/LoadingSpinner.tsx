@@ -22,7 +22,7 @@ const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   };
 
   return (
-    <Box sx={{ 
+    <Box sx={{
       position: 'absolute',
       top: 0,
       left: 0,

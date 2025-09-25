@@ -36,7 +36,6 @@ interface DataTableProps {
   enableExportExcel?: boolean;
   onAdd?: () => void;
   onDelete?: (selectedRows: number[]) => void;
-  onExport?: () => void;
   onSplit?: () => void;
   onMerge?: () => void;
   onCompare?: () => void;
@@ -56,12 +55,8 @@ const StyledDataGrid = styled(DataGrid)(({ theme }) => ({
       borderColor: theme.palette.divider,
       padding: '8px 16px',
       fontSize: '0.875rem',
-      '&:focus': {
-        outline: 'none',
-      },
-      '&:focus-within': {
-        outline: 'none',
-      },
+      '&:focus': { outline: 'none' },
+      '&:focus-within': { outline: 'none' }
     },
     '& .MuiDataGrid-columnHeader': {
       backgroundColor: theme.palette.primary.main,
@@ -69,35 +64,31 @@ const StyledDataGrid = styled(DataGrid)(({ theme }) => ({
       fontWeight: 600,
       fontSize: '0.875rem',
       padding: '12px 16px',
-      '&:focus': {
-        outline: 'none',
-      },
-      '&:focus-within': {
-        outline: 'none',
-      },
+      '&:focus': { outline: 'none' },
+      '&:focus-within': { outline: 'none' },
       '& .MuiDataGrid-columnSeparator': {
-        color: theme.palette.primary.light,
+        color: theme.palette.primary.light
       },
       '& .MuiDataGrid-menuIcon': {
-        color: theme.palette.primary.contrastText,
+        color: theme.palette.primary.contrastText
       },
       '& .MuiDataGrid-sortIcon': {
-        color: theme.palette.primary.contrastText,
-      },
+        color: theme.palette.primary.contrastText
+      }
     },
     '& .MuiDataGrid-row': {
       '&:nth-of-type(even)': {
-        backgroundColor: theme.palette.action.hover,
+        backgroundColor: theme.palette.action.hover
       },
       '&:hover': {
-        backgroundColor: theme.palette.action.selected,
-      },
+        backgroundColor: theme.palette.action.selected
+      }
     },
     '& .MuiDataGrid-footerContainer': {
       borderTop: `1px solid ${theme.palette.divider}`,
-      backgroundColor: theme.palette.background.default,
-    },
-  },
+      backgroundColor: theme.palette.background.default
+    }
+  }
 }));
 
 const DataTable: React.FC<DataTableProps> = ({
@@ -115,7 +106,6 @@ const DataTable: React.FC<DataTableProps> = ({
   enableExportExcel = false,
   onAdd,
   onDelete,
-  onExport,
   onSplit,
   onMerge,
   onCompare,
@@ -275,19 +265,6 @@ const DataTable: React.FC<DataTableProps> = ({
                 </Tooltip>
               )}
               
-              {enableExport && onExport && (
-                <Tooltip title="导出" arrow>
-                  <IconButton
-                    onClick={onExport}
-                    sx={{
-                      color: 'primary.main',
-                      '&:hover': { backgroundColor: 'action.hover' },
-                    }}
-                  >
-                    <DownloadIcon />
-                  </IconButton>
-                </Tooltip>
-              )}
             </>
           )}
         </MuiToolbar>

@@ -26,8 +26,6 @@ interface ExcelWorkbook {
 
 // 处理Excel文件 - 保留所有格式信息
 async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
-  console.log('=== 开始解析Excel文件 (使用ExcelJS) ===');
-  console.log('文件大小:', file.byteLength, 'bytes');
   
   try {
     // 创建新的工作簿实例
@@ -40,12 +38,10 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
 
     // 处理每个工作表
     for (const worksheet of workbook.worksheets) {
-      console.log(`\n--- 处理工作表: ${worksheet.name} ---`);
       
       // 获取工作表的基本信息
       const rowCount = worksheet.rowCount;
       const columnCount = worksheet.columnCount;
-      console.log(`工作表 ${worksheet.name} 尺寸: ${rowCount} 行 x ${columnCount} 列`);
       
       // 提取数据
       const data: any[][] = [];
@@ -84,44 +80,6 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
           
           const cellAddress = `${rowNumber}_${colNumber}`;
           
-          // 调试：打印前几个单元格的原始样式
-          if (rowNumber <= 3 && colNumber <= 3) {
-            console.log(`原始单元格 ${cellAddress} 样式:`, cell.style);
-          }
-          
-          // 专门检查 O-1 单元格 (第15列第1行)
-          if (rowNumber === 1 && colNumber === 15) {
-            console.log(`=== O-1 单元格样式调试 ===`);
-            console.log(`单元格地址: ${cellAddress}`);
-            console.log(`原始样式:`, cell.style);
-            console.log(`填充样式:`, cell.style?.fill);
-            if (cell.style?.fill) {
-              console.log(`填充类型:`, cell.style.fill.type);
-              console.log(`前景色:`, (cell.style.fill as any).fgColor);
-              console.log(`背景色:`, (cell.style.fill as any).bgColor);
-            }
-            console.log(`边框样式:`, cell.style?.border);
-            if (cell.style?.border) {
-              console.log(`上边框:`, cell.style.border.top);
-              console.log(`下边框:`, cell.style.border.bottom);
-              console.log(`左边框:`, cell.style.border.left);
-              console.log(`右边框:`, cell.style.border.right);
-            }
-          }
-          
-          // 专门检查 G-2 单元格 (第7列第2行)
-          if (rowNumber === 2 && colNumber === 7) {
-            console.log(`=== G-2 单元格样式调试 ===`);
-            console.log(`单元格地址: ${cellAddress}`);
-            console.log(`原始样式:`, cell.style);
-            console.log(`边框样式:`, cell.style?.border);
-            if (cell.style?.border) {
-              console.log(`上边框:`, cell.style.border.top);
-              console.log(`下边框:`, cell.style.border.bottom);
-              console.log(`左边框:`, cell.style.border.left);
-              console.log(`右边框:`, cell.style.border.right);
-            }
-          }
           
           // 提取样式信息 - 无论单元格是否有值都要提取样式
           if (cell.style) {
@@ -203,20 +161,6 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
               } : undefined
             };
             
-            // 调试：打印提取后的样式
-            if (rowNumber <= 3 && colNumber <= 3) {
-              console.log(`提取后单元格 ${cellAddress} 样式:`, styles[cellAddress]);
-            }
-            
-            // 专门检查 O-1 单元格提取后的样式
-            if (rowNumber === 1 && colNumber === 15) {
-              console.log(`O-1 单元格提取后样式:`, styles[cellAddress]);
-            }
-            
-            // 专门检查 G-2 单元格提取后的样式
-            if (rowNumber === 2 && colNumber === 7) {
-              console.log(`G-2 单元格提取后样式:`, styles[cellAddress]);
-            }
           } else {
             // 即使没有样式，也要记录空单元格，这样导出时能正确处理
             styles[cellAddress] = {
@@ -228,10 +172,6 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
               protection: undefined
             };
             
-            // 调试：打印空单元格
-            if (rowNumber <= 3 && colNumber <= 3) {
-              console.log(`空单元格 ${cellAddress} 无样式`);
-            }
           }
         }
         
@@ -242,11 +182,7 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
       while (data.length < rowCount) {
         data.push(new Array(columnCount).fill(''));
       }
-      
-      console.log(`工作表 ${worksheet.name} 数据行数: ${data.length}`);
-      console.log(`工作表 ${worksheet.name} 有样式的单元格数量: ${Object.keys(styles).length}`);
-      console.log(`工作表 ${worksheet.name} 有公式的单元格数量: ${Object.keys(formulas).length}`);
-      
+
       // 提取工作表级别的属性
       properties.columnCount = worksheet.columnCount;
       properties.rowCount = worksheet.rowCount;
@@ -286,11 +222,6 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
         properties.protection = (worksheet as any).protection;
       }
       
-      // 打印部分样式信息用于调试
-    const styleKeys = Object.keys(styles).slice(0, 3);
-    styleKeys.forEach(cellAddr => {
-      console.log(`  单元格 ${cellAddr} 样式:`, styles[cellAddr]);
-    });
     
     sheets.push({
         name: worksheet.name,
@@ -304,7 +235,6 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
     });
   }
 
-  console.log('\n=== Excel文件解析完成 ===');
   return {
     sheets: sheets,
     workbook: workbook // 保留完整的workbook对象
@@ -318,13 +248,11 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
 
 // 保存Excel文件 - 保留所有格式信息
 async function saveExcel(workbook: any, _filename: string): Promise<ArrayBuffer> {
-  console.log('=== 开始保存Excel文件 (使用ExcelJS) ===');
   
   try {
     // 使用ExcelJS的writeBuffer方法
     const buffer = await workbook.xlsx.writeBuffer();
     
-    console.log('Excel文件保存完成，文件大小:', buffer.byteLength, 'bytes');
     return buffer;
     
   } catch (error) {

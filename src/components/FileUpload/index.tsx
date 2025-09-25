@@ -1,7 +1,9 @@
-import React, { useCallback, useRef } from 'react';
+import React from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import { useFileUpload } from '../../hooks/useCommon';
+import { validateFileFormat } from '../../utils/commonUtils';
 
 interface FileUploadProps {
   onFileSelect: (file: File) => void;
@@ -15,8 +17,9 @@ const UploadBox = styled(Box)(({ theme }) => ({
   position: 'relative',
   overflow: 'hidden',
   background: theme.palette.background.paper,
+  borderRadius: 2,
   '&:hover': {
-    borderColor: theme.palette.primary.dark,
+    borderColor: theme.palette.primary.dark
   },
   '&:before': {
     content: '""',
@@ -26,85 +29,44 @@ const UploadBox = styled(Box)(({ theme }) => ({
     right: 0,
     bottom: 0,
     background: theme.palette.background.paper,
-    opacity: 0.97,
-  },
+    opacity: 0.97
+  }
 }));
 
 const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const file = e.dataTransfer.files[0];
-      if (file) {
-        // 检查文件扩展名
-        const fileName = file.name.toLowerCase();
-        const isExcelFile = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
-        const isNumbersFile = fileName.endsWith('.numbers');
-        
-        if (isNumbersFile) {
-          alert('不支持.numbers文件格式。请将文件导出为Excel格式(.xlsx或.xls)后再上传。');
-          return;
-        }
-        
-        if (isExcelFile) {
-          onFileSelect(file);
-        } else {
-          alert('请选择Excel文件(.xlsx或.xls格式)');
-        }
-      }
-    },
-    [onFileSelect]
-  );
-
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        // 检查文件扩展名
-        const fileName = file.name.toLowerCase();
-        const isExcelFile = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
-        const isNumbersFile = fileName.endsWith('.numbers');
-        
-        if (isNumbersFile) {
-          alert('不支持.numbers文件格式。请将文件导出为Excel格式(.xlsx或.xls)后再上传。');
-          return;
-        }
-        
-        if (isExcelFile) {
-          onFileSelect(file);
-        } else {
-          alert('请选择Excel文件(.xlsx或.xls格式)');
-        }
-      }
-    },
-    [onFileSelect]
-  );
-
-  const handleClick = (e: React.MouseEvent) => {
-    // 阻止事件冒泡，避免触发两次点击
-    e.stopPropagation();
-    fileInputRef.current?.click();
+  const validateAndSelectFile = (file: File) => {
+    const validation = validateFileFormat(file);
+    if (validation.isValid) {
+      onFileSelect(file);
+    } else {
+      alert(validation.error);
+    }
   };
+
+  const {
+    isDragOver,
+    fileInputRef,
+    handleDrop,
+    handleDragOver,
+    handleDragLeave,
+    handleFileSelect,
+    handleClick
+  } = useFileUpload(validateAndSelectFile);
 
   return (
     <UploadBox
       onDrop={handleDrop}
       onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onClick={() => fileInputRef.current?.click()}
       sx={{ 
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 2
+        gap: 2,
+        opacity: isDragOver ? 0.8 : 1,
+        transform: isDragOver ? 'scale(1.02)' : 'scale(1)',
+        transition: 'all 0.2s ease'
       }}
     >
       <input
@@ -117,14 +79,15 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
       />
       
       <UploadFileIcon 
-        className="upload-icon"
         sx={{ 
-          fontSize: 64, 
+          fontSize: 64,
           color: 'primary.main',
           filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))',
-          mb: 2,
+          marginBottom: 2,
           position: 'relative',
-          cursor: 'pointer'
+          cursor: 'pointer',
+          transform: isDragOver ? 'scale(1.1)' : 'scale(1)',
+          transition: 'transform 0.2s ease'
         }} 
       />
       
