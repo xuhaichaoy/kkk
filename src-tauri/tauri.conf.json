@@ -3,7 +3,7 @@
 		"beforeBuildCommand": "pnpm run build",
 		"beforeDevCommand": "pnpm run dev",
 		"frontendDist": "../dist",
-		"devUrl": "http://localhost:5173"
+		"devUrl": "http://127.0.0.1:5173"
 	},
 	"bundle": {
 		"active": true,
@@ -62,7 +62,6 @@
 			"windows": {
 				"installMode": "passive"
 			}
-
 		}
 	},
 	"app": {

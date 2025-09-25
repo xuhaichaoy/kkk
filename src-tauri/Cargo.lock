@@ -384,6 +384,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
+ "tauri-plugin-fs",
  "tauri-plugin-localhost",
  "tauri-plugin-log",
  "tauri-plugin-notification",

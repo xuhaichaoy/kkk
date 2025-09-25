@@ -19,6 +19,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import SplitIcon from '@mui/icons-material/AccountTree';
 import MergeIcon from '@mui/icons-material/CallMerge';
 import CompareIcon from '@mui/icons-material/Compare';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
 
 interface DataTableProps {
   rows: any[];
@@ -32,12 +33,14 @@ interface DataTableProps {
   enableSplit?: boolean;
   enableMerge?: boolean;
   enableCompare?: boolean;
+  enableExportExcel?: boolean;
   onAdd?: () => void;
   onDelete?: (selectedRows: number[]) => void;
   onExport?: () => void;
   onSplit?: () => void;
   onMerge?: () => void;
   onCompare?: () => void;
+  onExportExcel?: () => void;
   onRowUpdate?: (updatedRow: GridRowModel, originalRow: GridRowModel) => GridRowModel;
   pageSizeOptions?: number[];
   initialPageSize?: number;
@@ -109,12 +112,14 @@ const DataTable: React.FC<DataTableProps> = ({
   enableSplit = false,
   enableMerge = false,
   enableCompare = false,
+  enableExportExcel = false,
   onAdd,
   onDelete,
   onExport,
   onSplit,
   onMerge,
   onCompare,
+  onExportExcel,
   onRowUpdate,
   pageSizeOptions = [10, 25, 50, 100],
   initialPageSize = 10
@@ -146,7 +151,7 @@ const DataTable: React.FC<DataTableProps> = ({
 
   return (
     <Box sx={{ height, width: '100%', position: 'relative' }}>
-      {(enableAdd || enableDelete || enableExport || enableSplit || enableMerge || enableCompare) && (
+      {(enableAdd || enableDelete || enableExport || enableSplit || enableMerge || enableCompare || enableExportExcel) && (
         <MuiToolbar 
           sx={[
             {
@@ -252,6 +257,20 @@ const DataTable: React.FC<DataTableProps> = ({
                     }}
                   >
                     <CompareIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+              
+              {enableExportExcel && onExportExcel && (
+                <Tooltip title="导出Excel" arrow>
+                  <IconButton
+                    onClick={onExportExcel}
+                    sx={{
+                      color: 'success.main',
+                      '&:hover': { backgroundColor: 'action.hover' },
+                    }}
+                  >
+                    <FileDownloadIcon />
                   </IconButton>
                 </Tooltip>
               )}

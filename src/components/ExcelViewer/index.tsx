@@ -4,7 +4,7 @@ import {
   Typography, 
   Tooltip
 } from '@mui/material';
-import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog, CompareSheetsDialog } from '../common';
+import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog, CompareSheetsDialog, ExportSheetsDialog } from '../common';
 import { 
   SheetData, 
   EditedRowData,
@@ -14,7 +14,9 @@ import {
   formatCellValue,
   splitTableByColumn,
   exportToCSV,
-  mergeSheets
+  mergeSheets,
+  exportToExcel,
+  ExportOptions
 } from '../../utils/excelUtils';
 
 interface ExcelViewerProps {
@@ -30,6 +32,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
   const [splitDialogOpen, setSplitDialogOpen] = useState(false);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   // 初始化编辑数据，从本地存储加载
   const [editedRows, setEditedRows] = useState<EditedRowData>(() => {
@@ -166,6 +169,25 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     setCompareDialogOpen(false);
   }, []);
 
+  // Excel导出功能
+  const handleExportExcel = useCallback(() => {
+    setExportDialogOpen(true);
+  }, []);
+
+  const handleCloseExportDialog = useCallback(() => {
+    setExportDialogOpen(false);
+  }, []);
+
+  const handleConfirmExport = useCallback(async (selectedSheets: SheetData[], options: ExportOptions) => {
+    try {
+      await exportToExcel(selectedSheets, options);
+      setExportDialogOpen(false);
+    } catch (err) {
+      console.error('导出Excel失败:', err);
+      setError(err instanceof Error ? err.message : '导出失败');
+    }
+  }, []);
+
   // 导出功能
   const handleExport = useCallback(() => {
     if (!sheets.length) return;
@@ -194,7 +216,16 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
         if (e.data.type === 'SUCCESS') {
           console.log('Excel data parsed successfully:', e.data.data);
           // Worker返回的是 { sheets: [], workbook: {} } 结构
-          setSheets(e.data.data.sheets || e.data.data);
+          const sheets = e.data.data.sheets || e.data.data;
+          const workbook = e.data.data.workbook;
+          
+          // 为每个sheet添加原始workbook引用
+          const sheetsWithWorkbook = sheets.map((sheet: any) => ({
+            ...sheet,
+            originalWorkbook: workbook
+          }));
+          
+          setSheets(sheetsWithWorkbook);
         } else if (e.data.type === 'ERROR') {
           console.error('Excel parsing error:', e.data.error);
           setError(e.data.error);
@@ -337,12 +368,14 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
           enableSplit={true}
           enableMerge={sheets.length >= 2}
           enableCompare={sheets.length >= 2}
+          enableExportExcel={sheets.length > 0}
           onAdd={handleAddRow}
           onDelete={handleDeleteRows}
           onExport={handleExport}
           onSplit={handleSplitTable}
           onMerge={handleMergeSheets}
           onCompare={handleCompareSheets}
+          onExportExcel={handleExportExcel}
           onRowUpdate={(updatedRow, originalRow) => {
             const sheetId = `${index}_${updatedRow.id}`;
                   const changedField = Object.keys(updatedRow).find(
@@ -399,6 +432,13 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
         onClose={handleCloseCompareDialog}
         sheets={sheets}
         editedRows={editedRows}
+      />
+      
+      <ExportSheetsDialog
+        open={exportDialogOpen}
+        onClose={handleCloseExportDialog}
+        onConfirm={handleConfirmExport}
+        sheets={sheets}
       />
     </Box>
   );

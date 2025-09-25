@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --force && tsr watch",
+    "dev": "vite --force",
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -21,7 +21,8 @@
     "@mui/x-data-grid": "^8.11.3",
     "@tanstack/react-router": "^1.123.2",
     "@tanstack/router-devtools": "^1.123.2",
-    "@tauri-apps/api": "2.6.0",
+    "@tauri-apps/plugin-dialog": "~2.4.0",
+    "@tauri-apps/plugin-fs": "~2",
     "@types/node": "^24.0.8",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
