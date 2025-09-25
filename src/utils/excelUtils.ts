@@ -155,10 +155,7 @@ export const splitTableByColumn = (
   const rowsWithEdits = getRowsWithEdits(dataRows, currentSheet, editedRows);
   
   const uniqueValues = getColumnUniqueValues(dataRows, columnIndex, currentSheet, editedRows);
-  
-  console.log(`拆分表格: ${sheetData.name}, 列索引: ${columnIndex}, 唯一值: ${uniqueValues.length}个`);
-  console.log(`原始样式数量: ${sheetData.styles ? Object.keys(sheetData.styles).length : 0}`);
-  
+   
   return uniqueValues.map(value => {
     // 首先找到所有匹配的行索引
     const matchingRowIndices: number[] = [];
@@ -171,8 +168,6 @@ export const splitTableByColumn = (
     const filteredRows = matchingRowIndices.map(index => rowsWithEdits[index]);
     const baseName = `${sheetData.name}_${value}`;
     const uniqueName = generateUniqueSheetName(baseName, existingSheets);
-    
-    console.log(`处理值 "${value}": 过滤后行数 ${filteredRows.length}, 匹配的行索引: [${matchingRowIndices.join(', ')}]`);
     
     // 创建新的样式对象，只保留相关行的样式
     const newStyles: any = {};
@@ -204,8 +199,6 @@ export const splitTableByColumn = (
         }
       });
     }
-    
-    console.log(`值 "${value}" 保留的样式数量: ${preservedStylesCount}`);
     
     return {
       name: uniqueName,
@@ -729,7 +722,6 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
  * 从SheetData创建工作表 - 保留原始样式和公式
  */
 const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOptions, targetWorkbook?: ExcelJS.Workbook): ExcelJS.Worksheet => {
-  console.log(`\n--- 从SheetData创建工作表: ${sheetData.name} ---`);
   
   // 如果有原始workbook，直接使用原始工作表
   if (sheetData.originalWorkbook) {
@@ -741,12 +733,9 @@ const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOpti
     }
     
     if (originalWorksheet) {
-      console.log(`使用原始工作表: ${sheetData.name}`);
       return originalWorksheet;
     }
   }
-  
-  console.log(`使用SheetData重建工作表: ${sheetData.name}`);
   
   // 在目标工作簿中直接创建工作表
   const worksheet = targetWorkbook ? targetWorkbook.addWorksheet(sheetData.name) : new ExcelJS.Workbook().addWorksheet(sheetData.name);
@@ -756,8 +745,6 @@ const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOpti
     defaultRowHeight: 15,
     defaultColWidth: 10
   } as any;
-  
-  console.log(`开始添加数据，共 ${sheetData.data.length} 行`);
   
         // 添加数据到工作表
         sheetData.data.forEach((row, rowIndex) => {
@@ -782,18 +769,10 @@ const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOpti
             // 样式将在数据添加完成后统一处理
           });
     
-    // 每100行打印一次进度
-    if ((rowIndex + 1) % 100 === 0) {
-      console.log(`已处理 ${rowIndex + 1} 行数据`);
-    }
   });
-  
-  console.log(`数据添加完成，开始设置格式`);
   
   // 处理所有样式信息，包括空单元格的样式
   if (sheetData.styles) {
-    console.log(`开始处理所有单元格样式，共 ${Object.keys(sheetData.styles).length} 个样式`);
-    
     Object.keys(sheetData.styles).forEach(cellKey => {
       const [rowStr, colStr] = cellKey.split('_');
       const rowIndex = parseInt(rowStr) - 1;

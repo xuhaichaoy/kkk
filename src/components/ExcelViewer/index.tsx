@@ -189,12 +189,6 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     }
   }, []);
 
-  // 导出功能
-  const handleExport = useCallback(() => {
-    if (!sheets.length) return;
-    const currentSheetData = sheets[currentSheet];
-    exportToCSV(currentSheetData);
-  }, [sheets, currentSheet]);
 
   const processExcel = useCallback(async (file: File) => {
     setLoading(true);
