@@ -34,6 +34,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [originalBuffer, setOriginalBuffer] = useState<ArrayBuffer | null>(null);
 
   // 初始化编辑数据，从本地存储加载
   const [editedRows, setEditedRows] = useState<EditedRowData>(() => {
@@ -181,13 +182,13 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
 
   const handleConfirmExport = useCallback(async (selectedSheets: SheetData[], options: ExportOptions) => {
     try {
-      await exportToExcel(selectedSheets, options);
+      await exportToExcel(selectedSheets, { ...options, originalBuffer: originalBuffer || undefined });
       setExportDialogOpen(false);
     } catch (err) {
       console.error('导出Excel失败:', err);
       setError(err instanceof Error ? err.message : '导出失败');
     }
-  }, []);
+  }, [originalBuffer]);
 
 
   const processExcel = useCallback(async (file: File) => {
@@ -208,6 +209,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
       });
 
       const buffer = await file.arrayBuffer();
+      setOriginalBuffer(buffer);
 
       worker.postMessage({
         type: 'PARSE_EXCEL',
@@ -215,12 +217,19 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
       });
 
       worker.onmessage = (e) => {
-        console.log('Worker message received:', e.data);
         if (e.data.type === 'SUCCESS') {
-          console.log('Excel data parsed successfully:', e.data.data);
           // Worker返回的是 { sheets: [], workbook: {} } 结构
           const sheets = e.data.data.sheets || e.data.data;
           const workbook = e.data.data.workbook;
+          // 诊断：检测原始workbook是否可用（跨worker传递后方法可能丢失）
+          try {
+            console.log('[excelViewer] received workbook diagnostics:', {
+              hasWorkbook: !!workbook,
+              hasGetWorksheet: typeof workbook?.getWorksheet === 'function',
+              hasWorksheetsArray: Array.isArray(workbook?.worksheets),
+              worksheetCount: Array.isArray(workbook?.worksheets) ? workbook.worksheets.length : undefined,
+            });
+          } catch (_) {}
           
           // 检查是否有工作表
           if (!sheets || sheets.length === 0) {
@@ -269,7 +278,6 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
   }
 
   if (!sheets.length) {
-    console.log('No sheets available, sheets:', sheets);
     return (
       <Box sx={{ p: 3, textAlign: 'center' }}>
         <Typography variant="h6" color="text.secondary">
@@ -296,17 +304,12 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     );
   }
 
-  console.log('Rendering Excel viewer with sheets:', sheets);
-
   // 准备标签页数据
   const tabs: TabItem[] = sheets.map((sheet, index) => {
-    console.log(`Processing sheet ${index}:`, sheet.name, 'data length:', sheet.data.length);
     
     // 确保有数据行
     const dataRows = sheet.data.length > 1 ? sheet.data.slice(1) : [];
     const headers = sheet.data[0] || [];
-    
-    console.log(`Sheet ${index} - Headers:`, headers, 'Data rows:', dataRows.length);
     
     return {
       label: sheet.name,

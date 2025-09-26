@@ -15,6 +15,8 @@ interface SheetData {
   totalCols: number;
   styles?: any;
   formulas?: any;
+  // 保存富文本 runs（按单元格地址，如 "1_1"）以便导出时能还原颜色/加粗等
+  richTextRuns?: { [cellKey: string]: any[] };
   properties?: any; // 工作表级别的属性（列宽、行高、合并单元格等）
   originalWorkbook?: any; // 原始workbook对象引用
 }
@@ -36,6 +38,16 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
     
     const sheets: SheetData[] = [];
 
+    // 调试日志：工作簿信息
+    try {
+      console.log('[excelWorker] workbook loaded:', {
+        worksheetCount: workbook.worksheets?.length,
+        creator: (workbook as any).creator,
+      });
+    } catch (_) {
+      // ignore logging failures in worker
+    }
+
     // 处理每个工作表
     for (const worksheet of workbook.worksheets) {
       
@@ -48,8 +60,11 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
       const styles: any = {};
       const formulas: any = {};
       const properties: any = {};
+      const richTextRuns: Record<string, any[]> = {};
       
       // 遍历所有行和列
+      let styledCellCount = 0;
+      let formulaCellCount = 0;
       for (let rowNumber = 1; rowNumber <= rowCount; rowNumber++) {
         const rowData: any[] = [];
         
@@ -63,11 +78,27 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
               // 公式单元格
               cellValue = cell.value.result;
               formulas[`${rowNumber}_${colNumber}`] = cell.value.formula;
+              formulaCellCount++;
             } else if (typeof cell.value === 'object' && 'richText' in cell.value) {
               // 富文本单元格 - 提取纯文本内容
               const richTextValue = cell.value as any;
               if (Array.isArray(richTextValue.richText)) {
                 cellValue = richTextValue.richText.map((item: any) => item.text || '').join('');
+                // 保存富文本 runs 以便导出时还原（包含字体颜色等）
+                try {
+                  richTextRuns[`${rowNumber}_${colNumber}`] = richTextValue.richText.map((rt: any) => ({
+                    text: rt.text,
+                    font: rt.font ? {
+                      name: rt.font.name,
+                      size: rt.font.size,
+                      bold: rt.font.bold,
+                      italic: rt.font.italic,
+                      underline: rt.font.underline,
+                      strike: rt.font.strike,
+                      color: rt.font.color
+                    } : undefined
+                  }));
+                } catch (_) {}
               } else {
                 cellValue = richTextValue.richText?.text || '';
               }
@@ -160,6 +191,17 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
                 hidden: cell.style.protection.hidden
               } : undefined
             };
+            // 统计具有实际样式的单元格
+            if (
+              styles[cellAddress].font ||
+              styles[cellAddress].fill ||
+              styles[cellAddress].border ||
+              styles[cellAddress].alignment ||
+              styles[cellAddress].numFmt ||
+              styles[cellAddress].protection
+            ) {
+              styledCellCount++;
+            }
             
           } else {
             // 即使没有样式，也要记录空单元格，这样导出时能正确处理
@@ -230,9 +272,22 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
         totalCols: data.length > 0 ? data[0].length : 0,
       styles: styles,
       formulas: formulas,
+      richTextRuns,
         properties: properties,
         originalWorkbook: workbook // 保存原始workbook引用
     });
+
+      // 调试日志：每个工作表的统计
+      try {
+        console.log('[excelWorker] sheet parsed:', {
+          name: worksheet.name,
+          rows: rowCount,
+          cols: columnCount,
+          formulaCells: Object.keys(formulas).length,
+          styledCells: styledCellCount,
+          merges: properties.merges?.length || 0,
+        });
+      } catch (_) {}
   }
 
   return {
