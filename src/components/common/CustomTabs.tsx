@@ -30,10 +30,11 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, value, index, ...other })
   );
 };
 
-const StyledTabs = styled(Tabs)(() => ({
+const StyledTabs = styled(Tabs)(({ theme }) => ({
   '& .MuiTabs-indicator': {
     height: 3,
     borderRadius: '3px 3px 0 0',
+    backgroundColor: theme.palette.primary.main,
   },
   '& .MuiTab-root': {
     textTransform: 'none',
@@ -41,13 +42,17 @@ const StyledTabs = styled(Tabs)(() => ({
     fontWeight: 500,
     minHeight: 48,
     color: 'text.secondary',
+    borderRadius: '8px 8px 0 0',
+    margin: '0 4px',
+    transition: 'all 0.2s ease',
     '&.Mui-selected': {
       color: 'primary.main',
       fontWeight: 600,
+      backgroundColor: theme.palette.primary.light + '20',
     },
     '&:hover': {
       color: 'primary.main',
-      opacity: 0.8,
+      backgroundColor: theme.palette.action.hover,
     },
   },
 }));
@@ -82,7 +87,10 @@ const CustomTabs: React.FC<CustomTabsProps> = ({
         mb: 2,
         mt: 1,
         pb: 1,
-        pt: 1
+        pt: 1,
+        backgroundColor: 'background.paper',
+        borderRadius: '8px 8px 0 0',
+        px: 1
       }}>
         <StyledTabs 
           value={value} 

@@ -1,426 +1,235 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { 
   Box, 
-  Typography, 
-  Tooltip
+  Typography
 } from '@mui/material';
-import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog, CompareSheetsDialog, ExportSheetsDialog } from '../common';
+import { DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog, CompareSheetsDialog, ExportSheetsDialog } from '../common';
 import { 
-  SheetData, 
+  GlobalSheetData,
   EditedRowData,
-  getFileId,
-  loadEditedData,
-  saveEditedData,
-  formatCellValue,
-  splitTableByColumn,
-  exportToCSV,
-  mergeSheets,
   exportToExcel,
-  ExportOptions
+  ExportOptions,
+  splitTableByColumn
 } from '../../utils/excelUtils';
-import { validateFileFormat } from '../../utils/commonUtils';
+import { GridColDef } from '@mui/x-data-grid';
 
 interface ExcelViewerProps {
-  file: File | null;
+  allSheets: GlobalSheetData[];
+  currentSheetIndex: number;
+  onSheetChange: (index: number) => void;
+  editedRows: EditedRowData;
+  onUpdateEditedRows: (fileId: string, sheetIndex: number, rowId: number, field: string, value: any) => void;
+  onUpdateSheets?: (newSheets: GlobalSheetData[]) => void;
 }
 
-
-const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
-  const [sheets, setSheets] = useState<SheetData[]>([]);
-  const [currentSheet, setCurrentSheet] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const ExcelViewer: React.FC<ExcelViewerProps> = ({ 
+  allSheets, 
+  currentSheetIndex, 
+  onSheetChange, 
+  editedRows, 
+  onUpdateEditedRows,
+  onUpdateSheets
+}) => {
   const [splitDialogOpen, setSplitDialogOpen] = useState(false);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
-  // 初始化编辑数据，从本地存储加载
-  const [editedRows, setEditedRows] = useState<EditedRowData>(() => {
-    return loadEditedData(getFileId(file));
-  });
+  const currentSheet = allSheets[currentSheetIndex];
 
-  // 删除选中的行
-  const handleDeleteRows = useCallback((selectedRowIndexes: number[]) => {
-    if (selectedRowIndexes.length === 0) return;
-
-    const newData = [...sheets];
-    const currentSheetData = [...newData[currentSheet].data];
-    
-    // 按照索引从大到小排序，这样删除时不会影响其他行的索引
-    const sortedIndexes = selectedRowIndexes.sort((a, b) => b - a);
-    
-    // 删除选中的行（跳过表头）
-    sortedIndexes.forEach(rowIndex => {
-      currentSheetData.splice(rowIndex + 1, 1);
-    });
-
-    newData[currentSheet].data = currentSheetData;
-    newData[currentSheet].totalRows = currentSheetData.length - 1; // 减去表头
-
-    setSheets(newData);
-
-    // 更新编辑数据，删除被删除行的编辑记录
-    setEditedRows(prev => {
-      const newEditedRows = { ...prev };
-      const fileId = getFileId(file);
-      
-      // 删除被删除行的编辑数据
-      sortedIndexes.forEach(rowIndex => {
-        const sheetId = `${currentSheet}_${rowIndex}`;
-        delete newEditedRows[sheetId];
-      });
-      
-      // 重新调整后续行的编辑数据索引
-      Object.keys(newEditedRows).forEach(sheetId => {
-        const [sheetIndex, rowIndex] = sheetId.split('_').map(Number);
-        if (sheetIndex === currentSheet) {
-          // 计算删除后该行的新索引
-          let newRowIndex = rowIndex;
-          sortedIndexes.forEach(deletedIndex => {
-            if (rowIndex > deletedIndex) {
-              newRowIndex--;
-            }
-          });
-          
-          // 如果索引发生变化，更新编辑数据
-          if (newRowIndex !== rowIndex) {
-            const newSheetId = `${currentSheet}_${newRowIndex}`;
-            newEditedRows[newSheetId] = newEditedRows[sheetId];
-            delete newEditedRows[sheetId];
-          }
-        }
-      });
-      
-      // 保存更新后的编辑数据到本地存储
-      saveEditedData(fileId, newEditedRows);
-      return newEditedRows;
-    });
-  }, [sheets, currentSheet, file, getFileId, saveEditedData]);
-
-  // 添加新行
-  const handleAddRow = useCallback(() => {
-    const newData = [...sheets];
-    const currentSheetData = [...newData[currentSheet].data];
-    const columnCount = currentSheetData[0].length;
-    
-    // 创建一个空行，列数与当前表格相同
-    const newRow = new Array(columnCount).fill('');
-    
-    // 在表格数据中添加新行（在表头之后）
-    currentSheetData.push(newRow);
-
-    newData[currentSheet].data = currentSheetData;
-    newData[currentSheet].totalRows = currentSheetData.length - 1; // 减去表头
-
-    setSheets(newData);
-  }, [sheets, currentSheet]);
-
-  // 拆分表格功能
-  const handleSplitTable = useCallback(() => {
-    setSplitDialogOpen(true);
-  }, []);
-
-  const handleCloseSplitDialog = useCallback(() => {
-    setSplitDialogOpen(false);
-  }, []);
-
-  const handleConfirmSplit = useCallback((columnField: string) => {
-    const currentSheetData = sheets[currentSheet];
-    if (!currentSheetData) return;
-
-    const columnIndex = parseInt(columnField);
-    const newSheets = splitTableByColumn(currentSheetData, columnIndex, currentSheet, editedRows, sheets);
-    
-    if (newSheets.length === 0) {
-      setError('该列没有有效数据用于拆分');
-      setSplitDialogOpen(false);
-      return;
-    }
-
-    setSheets(prev => [...prev, ...newSheets]);
-    setSplitDialogOpen(false);
-  }, [sheets, currentSheet, editedRows]);
-
-  // 合并表格功能
-  const handleMergeSheets = useCallback(() => {
-    setMergeDialogOpen(true);
-  }, []);
-
-  const handleCloseMergeDialog = useCallback(() => {
-    setMergeDialogOpen(false);
-  }, []);
-
-  const handleConfirmMerge = useCallback((selectedSheets: SheetData[], mergedSheetName: string) => {
-    try {
-      const mergedSheet = mergeSheets(selectedSheets, mergedSheetName, sheets);
-      setSheets(prev => [...prev, mergedSheet]);
-      setMergeDialogOpen(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '合并失败');
-    }
-  }, [sheets]);
-
-  // 差异对比功能
-  const handleCompareSheets = useCallback(() => {
-    setCompareDialogOpen(true);
-  }, []);
-
-  const handleCloseCompareDialog = useCallback(() => {
-    setCompareDialogOpen(false);
-  }, []);
-
-  // Excel导出功能
-  const handleExportExcel = useCallback(() => {
-    setExportDialogOpen(true);
-  }, []);
-
-  const handleCloseExportDialog = useCallback(() => {
-    setExportDialogOpen(false);
-  }, []);
-
-  const handleConfirmExport = useCallback(async (selectedSheets: SheetData[], options: ExportOptions) => {
-    try {
-      await exportToExcel(selectedSheets, options);
-      setExportDialogOpen(false);
-    } catch (err) {
-      console.error('导出Excel失败:', err);
-      setError(err instanceof Error ? err.message : '导出失败');
-    }
-  }, []);
-
-
-  const processExcel = useCallback(async (file: File) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // 检查文件格式
-      const validation = validateFileFormat(file);
-      if (!validation.isValid) {
-        setError(validation.error || '文件格式不支持');
-        setLoading(false);
-        return;
-      }
-
-      const worker = new Worker(new URL('../../workers/excelWorker.ts', import.meta.url), {
-        type: 'module'
-      });
-
-      const buffer = await file.arrayBuffer();
-
-      worker.postMessage({
-        type: 'PARSE_EXCEL',
-        file: buffer
-      });
-
-      worker.onmessage = (e) => {
-        console.log('Worker message received:', e.data);
-        if (e.data.type === 'SUCCESS') {
-          console.log('Excel data parsed successfully:', e.data.data);
-          // Worker返回的是 { sheets: [], workbook: {} } 结构
-          const sheets = e.data.data.sheets || e.data.data;
-          const workbook = e.data.data.workbook;
-          
-          // 检查是否有工作表
-          if (!sheets || sheets.length === 0) {
-            setError('文件解析成功但没有找到工作表数据。请检查文件是否为有效的Excel文件。');
-            setLoading(false);
-            worker.terminate();
-            return;
-          }
-          
-          // 为每个sheet添加原始workbook引用
-          const sheetsWithWorkbook = sheets.map((sheet: any) => ({
-            ...sheet,
-            originalWorkbook: workbook
-          }));
-          
-          setSheets(sheetsWithWorkbook);
-        } else if (e.data.type === 'ERROR') {
-          console.error('Excel parsing error:', e.data.error);
-          setError(e.data.error);
-        }
-        setLoading(false);
-        worker.terminate();
-      };
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '处理Excel文件时出错');
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (file) {
-      processExcel(file);
-    }
-  }, [file, processExcel]);
-
-  const handleSheetChange = (_event: React.SyntheticEvent, newValue: number) => {
-    setCurrentSheet(newValue);
-  };
-
-  if (loading) {
-    return <LoadingSpinner message="正在处理Excel文件..." />;
-  }
-
-  if (error) {
-    return <ErrorAlert error={error} title="错误" />;
-  }
-
-  if (!sheets.length) {
-    console.log('No sheets available, sheets:', sheets);
+  if (!currentSheet) {
     return (
-      <Box sx={{ p: 3, textAlign: 'center' }}>
-        <Typography variant="h6" color="text.secondary">
-          没有找到Excel数据
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          可能的原因：
-        </Typography>
-        <Box component="ul" sx={{ textAlign: 'left', mt: 2, pl: 3 }}>
-          <Typography component="li" variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            文件格式不支持（如.numbers文件）
-          </Typography>
-          <Typography component="li" variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            文件损坏或为空
-          </Typography>
-          <Typography component="li" variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            文件被密码保护
-          </Typography>
-        </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          请确保文件是有效的.xlsx或.xls格式
-        </Typography>
+      <Box sx={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '400px',
+        color: 'text.secondary'
+      }}>
+        <Typography variant="h6">请选择要查看的Sheet</Typography>
       </Box>
     );
   }
 
-  console.log('Rendering Excel viewer with sheets:', sheets);
+  // 处理行更新
+  const handleRowUpdate = useCallback((updatedRow: any, originalRow: any) => {
+    const changedField = Object.keys(updatedRow).find(
+      key => updatedRow[key] !== originalRow[key]
+    );
+    
+    if (changedField) {
+      onUpdateEditedRows(
+        currentSheet.fileId, 
+        currentSheet.originalSheetIndex, 
+        updatedRow.id, 
+        changedField, 
+        updatedRow[changedField]
+      );
+    }
+    return updatedRow;
+  }, [currentSheet, onUpdateEditedRows]);
+
+  // 处理Sheet切换
+  const handleSheetChange = useCallback((_event: React.SyntheticEvent, newValue: number) => {
+    onSheetChange(newValue);
+  }, [onSheetChange]);
+
+  // 对话框处理函数
+  const handleCloseSplitDialog = useCallback(() => setSplitDialogOpen(false), []);
+  const handleCloseMergeDialog = useCallback(() => setMergeDialogOpen(false), []);
+  const handleCloseCompareDialog = useCallback(() => setCompareDialogOpen(false), []);
+  const handleCloseExportDialog = useCallback(() => setExportDialogOpen(false), []);
+
+  const handleConfirmSplit = useCallback((splitOptions: any) => {
+    if (!currentSheet || !onUpdateSheets) {
+      console.error('分割功能需要当前sheet和更新函数');
+      return;
+    }
+
+    try {
+      const { columnIndex } = splitOptions;
+      
+      // 调用分割函数
+      const splitResults = splitTableByColumn(
+        currentSheet,
+        columnIndex,
+        currentSheetIndex,
+        editedRows,
+        allSheets
+      );
+
+      if (splitResults.length > 0) {
+        // 创建新的全局sheet数据
+        const newGlobalSheets: GlobalSheetData[] = splitResults.map((result, index) => ({
+          ...result,
+          fileId: currentSheet.fileId,
+          fileName: currentSheet.fileName,
+          originalSheetIndex: currentSheet.originalSheetIndex + index + 1
+        }));
+
+        // 更新sheets列表
+        const updatedSheets = [...allSheets, ...newGlobalSheets];
+        onUpdateSheets(updatedSheets);
+
+        // 切换到第一个分割结果
+        const firstSplitIndex = allSheets.length;
+        onSheetChange(firstSplitIndex);
+      }
+
+      setSplitDialogOpen(false);
+    } catch (error) {
+      console.error('分割表格失败:', error);
+      alert('分割失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    }
+  }, [currentSheet, currentSheetIndex, editedRows, allSheets, onUpdateSheets, onSheetChange]);
+
+  // 导出当前sheet为Excel
+  const handleExportCurrentSheet = useCallback(async () => {
+    if (!currentSheet) return;
+    
+    try {
+      const exportOptions: ExportOptions = {
+        fileName: `${currentSheet.fileName}_${currentSheet.name}`,
+        separateFiles: false,
+        preserveFormulas: true
+      };
+      
+      await exportToExcel([currentSheet], exportOptions);
+    } catch (error) {
+      console.error('导出当前sheet失败:', error);
+      alert('导出失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    }
+  }, [currentSheet]);
+
+
+  // 转换sheet数据为DataTable格式
+  const convertSheetToDataTable = useCallback((sheet: GlobalSheetData) => {
+    if (!sheet.data || sheet.data.length === 0) {
+      return { rows: [], columns: [] };
+    }
+
+    const headers = sheet.data[0] || [];
+    const rows = sheet.data.slice(1).map((row, index) => {
+      const rowData: any = { id: index };
+      headers.forEach((header, colIndex) => {
+        rowData[header] = row[colIndex] || '';
+      });
+      return rowData;
+    });
+
+    const columns: GridColDef[] = headers.map((header) => ({
+      field: header,
+      headerName: header,
+      width: 150,
+      editable: true,
+    }));
+
+    return { rows, columns };
+  }, []);
 
   // 准备标签页数据
-  const tabs: TabItem[] = sheets.map((sheet, index) => {
-    console.log(`Processing sheet ${index}:`, sheet.name, 'data length:', sheet.data.length);
-    
-    // 确保有数据行
-    const dataRows = sheet.data.length > 1 ? sheet.data.slice(1) : [];
-    const headers = sheet.data[0] || [];
-    
-    console.log(`Sheet ${index} - Headers:`, headers, 'Data rows:', dataRows.length);
+  const tabs: TabItem[] = allSheets.map((sheet) => {
+    const { rows, columns } = convertSheetToDataTable(sheet);
     
     return {
-      label: sheet.name,
-      badge: `${sheet.totalRows}行`,
+      label: (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography component="span" sx={{ fontWeight: 'inherit' }}>
+            {sheet.name}
+          </Typography>
+          <Typography 
+            component="span" 
+            sx={{ 
+              color: 'text.secondary',
+              fontSize: '0.75rem',
+              bgcolor: 'action.hover',
+              px: 1,
+              py: 0.5,
+              borderRadius: 1,
+              fontWeight: 500
+            }}
+          >
+            {sheet.fileName}
+          </Typography>
+          <Typography 
+            component="span" 
+            sx={{ 
+              color: 'text.secondary',
+              fontSize: '0.7rem',
+              bgcolor: 'action.hover',
+              px: 0.5,
+              py: 0.25,
+              borderRadius: 0.5,
+              fontWeight: 400
+            }}
+          >
+            {sheet.totalRows}行
+          </Typography>
+        </Box>
+      ),
       content: (
         <DataTable
-          rows={dataRows.map((row: any[], rowIndex: number) => {
-            const sheetId = `${index}_${rowIndex}`;
-            const editedRowData = editedRows[sheetId] || {};
-            
-            return {
-              id: rowIndex,
-              ...row.reduce((acc, cell, i) => ({ 
-                ...acc, 
-                [String(i)]: editedRowData[String(i)] || formatCellValue(cell)
-              }), {}),
-            };
-          })}
-          columns={headers.map((header: string, colIndex: number) => ({
-          field: String(colIndex),
-          headerName: header || `列 ${colIndex + 1}`,
-          minWidth: 120,
-          maxWidth: 300,
-          width: 180,
-          sortable: true,
-          filterable: true,
-          editable: true,
-          headerAlign: 'center',
-          align: 'center',
-          renderHeader: (params) => (
-            <Tooltip title={params.colDef.headerName} arrow>
-              <Box sx={{ 
-                width: '100%', 
-                textAlign: 'center',
-                fontWeight: 600,
-                whiteSpace: 'normal',
-                lineHeight: 1.4,
-                py: 1,
-                maxHeight: 100,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                display: '-webkit-box',
-                WebkitLineClamp: 4,
-                WebkitBoxOrient: 'vertical'
-              }}>
-                {params.colDef.headerName}
-              </Box>
-            </Tooltip>
-          ),
-          renderCell: (params) => {
-            const value = params.value?.toString() || '';
-            return (
-              <Tooltip 
-                title={value} 
-                arrow
-                placement="top"
-                enterDelay={100}
-              >
-                <Box sx={{ 
-                  width: '100%',
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  px: 1,
-                  fontSize: '0.875rem',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  color: theme => value.length > 50 ? theme.palette.primary.main : 'inherit',
-                  '&:hover': {
-                    color: theme => value.length > 50 ? theme.palette.primary.dark : 'inherit',
-                  }
-                }}>
-                  {value}
-                </Box>
-              </Tooltip>
-            );
-          },
-          }))}
-          enableSelection={true}
+          rows={rows}
+          columns={columns}
           enableAdd={true}
           enableDelete={true}
-          enableExport={true}
           enableSplit={true}
-          enableMerge={sheets.length >= 2}
-          enableCompare={sheets.length >= 2}
-          enableExportExcel={sheets.length > 0}
-          onAdd={handleAddRow}
-          onDelete={handleDeleteRows}
-          onSplit={handleSplitTable}
-          onMerge={handleMergeSheets}
-          onCompare={handleCompareSheets}
-          onExportExcel={handleExportExcel}
-          onRowUpdate={(updatedRow, originalRow) => {
-            const sheetId = `${index}_${updatedRow.id}`;
-                  const changedField = Object.keys(updatedRow).find(
-                    key => updatedRow[key] !== originalRow[key]
-                  );
-                  
-                  if (changedField) {
-                    setEditedRows(prev => {
-                      const newData = {
-                        ...prev,
-                        [sheetId]: {
-                          ...(prev[sheetId] || {}),
-                          [changedField]: updatedRow[changedField],
-                        },
-                      };
-                      saveEditedData(getFileId(file), newData);
-                      return newData;
-                    });
-                  }
-                  return updatedRow;
-                }}
+          enableMerge={true}
+          enableCompare={true}
+          enableExport={true}
+          enableExportExcel={true}
+          onAdd={() => {
+            console.log('添加行功能待实现');
+          }}
+          onDelete={(selectedRowIndexes: number[]) => {
+            console.log('删除行功能待实现', selectedRowIndexes);
+          }}
+          onSplit={() => setSplitDialogOpen(true)}
+          onMerge={() => setMergeDialogOpen(true)}
+          onCompare={() => setCompareDialogOpen(true)}
+          onExport={() => setExportDialogOpen(true)}
+          onExportExcel={handleExportCurrentSheet}
+          onRowUpdate={handleRowUpdate}
           height="70vh"
         />
       )
@@ -431,7 +240,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     <Box sx={{ width: '100%', height: '100%', pt: 1 }}>
       <CustomTabs
         tabs={tabs}
-        value={currentSheet}
+        value={currentSheetIndex}
         onChange={handleSheetChange}
       />
       
@@ -439,30 +248,41 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
         open={splitDialogOpen}
         onClose={handleCloseSplitDialog}
         onConfirm={handleConfirmSplit}
-        sheetData={sheets[currentSheet] || null}
-        currentSheet={currentSheet}
+        sheetData={currentSheet}
+        currentSheet={currentSheetIndex}
         editedRows={editedRows}
       />
       
       <MergeSheetsDialog
         open={mergeDialogOpen}
         onClose={handleCloseMergeDialog}
-        onConfirm={handleConfirmMerge}
-        sheets={sheets}
+        onConfirm={(selectedSheets: any[], options: any) => {
+          console.log('合并表格功能待实现', { selectedSheets, options });
+          setMergeDialogOpen(false);
+        }}
+        sheets={allSheets}
       />
       
       <CompareSheetsDialog
         open={compareDialogOpen}
         onClose={handleCloseCompareDialog}
-        sheets={sheets}
+        sheets={allSheets}
         editedRows={editedRows}
       />
       
       <ExportSheetsDialog
         open={exportDialogOpen}
         onClose={handleCloseExportDialog}
-        onConfirm={handleConfirmExport}
-        sheets={sheets}
+        onConfirm={async (selectedSheets: any[], options: any) => {
+          try {
+            await exportToExcel(selectedSheets, options);
+            setExportDialogOpen(false);
+          } catch (error) {
+            console.error('导出失败:', error);
+            alert('导出失败: ' + (error instanceof Error ? error.message : '未知错误'));
+          }
+        }}
+        sheets={allSheets}
       />
     </Box>
   );

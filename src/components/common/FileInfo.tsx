@@ -9,6 +9,7 @@ interface FileInfoProps {
   showType?: boolean;
   showLastModified?: boolean;
   variant?: 'default' | 'compact' | 'detailed';
+  compact?: boolean;
 }
 
 const FileInfoContainer = styled(Box)(({ theme }) => ({
@@ -27,10 +28,14 @@ const FileInfo: React.FC<FileInfoProps> = ({
   showSize = true,
   showType = false,
   showLastModified = false,
-  variant = 'default'
+  variant = 'default',
+  compact = false
 }) => {
 
-  if (variant === 'compact') {
+  // 如果compact为true，使用compact variant
+  const actualVariant = compact ? 'compact' : variant;
+
+  if (actualVariant === 'compact') {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Typography 
@@ -64,7 +69,7 @@ const FileInfo: React.FC<FileInfoProps> = ({
     );
   }
 
-  if (variant === 'detailed') {
+  if (actualVariant === 'detailed') {
     return (
       <FileInfoContainer>
         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -156,3 +161,4 @@ const FileInfo: React.FC<FileInfoProps> = ({
 };
 
 export default FileInfo;
+export type { FileInfoProps };

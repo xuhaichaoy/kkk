@@ -39,6 +39,7 @@ interface DataTableProps {
   onSplit?: () => void;
   onMerge?: () => void;
   onCompare?: () => void;
+  onExport?: () => void;
   onExportExcel?: () => void;
   onRowUpdate?: (updatedRow: GridRowModel, originalRow: GridRowModel) => GridRowModel;
   pageSizeOptions?: number[];
@@ -109,6 +110,7 @@ const DataTable: React.FC<DataTableProps> = ({
   onSplit,
   onMerge,
   onCompare,
+  onExport,
   onExportExcel,
   onRowUpdate,
   pageSizeOptions = [10, 25, 50, 100],
@@ -247,6 +249,20 @@ const DataTable: React.FC<DataTableProps> = ({
                     }}
                   >
                     <CompareIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+              
+              {enableExport && onExport && (
+                <Tooltip title="导出设置" arrow>
+                  <IconButton
+                    onClick={onExport}
+                    sx={{
+                      color: 'primary.main',
+                      '&:hover': { backgroundColor: 'action.hover' },
+                    }}
+                  >
+                    <DownloadIcon />
                   </IconButton>
                 </Tooltip>
               )}

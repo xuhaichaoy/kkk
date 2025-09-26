@@ -2,7 +2,16 @@
  * Excel数据处理工具函数
  */
 
-import * as ExcelJS from 'exceljs';
+// 动态导入ExcelJS
+let ExcelJS: any = null;
+
+// 初始化ExcelJS
+async function initExcelJS() {
+  if (!ExcelJS) {
+    ExcelJS = await import('exceljs');
+  }
+  return ExcelJS;
+}
 
 export interface SheetData {
   name: string;
@@ -13,6 +22,12 @@ export interface SheetData {
   formulas?: any; // 原始公式信息
   properties?: any; // 工作表级别的属性（列宽、行高、合并单元格等）
   originalWorkbook?: any; // 原始workbook对象引用
+}
+
+export interface GlobalSheetData extends SheetData {
+  fileId: string;
+  fileName: string;
+  originalSheetIndex: number;
 }
 
 export interface EditedRowData {
@@ -618,9 +633,11 @@ export interface ExportOptions {
 /**
  * 从原始workbook创建工作簿，保留所有格式信息
  */
-const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: ExportOptions): ExcelJS.Workbook => {
+const createWorkbookFromOriginal = async (selectedSheets: SheetData[], options: ExportOptions): Promise<any> => {
+  const ExcelJS = await initExcelJS();
+  
   // 使用第一个sheet的原始workbook作为基础
-  const baseWorkbook = selectedSheets[0].originalWorkbook as ExcelJS.Workbook;
+  const baseWorkbook = selectedSheets[0].originalWorkbook as any;
   
   // 创建新的workbook
   const newWorkbook = new ExcelJS.Workbook();
@@ -638,14 +655,14 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
   newWorkbook.category = baseWorkbook.category;
   
   // 为每个选中的sheet添加工作表
-  selectedSheets.forEach(sheetData => {
+  for (const sheetData of selectedSheets) {
     // 检查 baseWorkbook 是否有 getWorksheet 方法
     let originalWorksheet;
     if (typeof baseWorkbook.getWorksheet === 'function') {
       originalWorksheet = baseWorkbook.getWorksheet(sheetData.name);
     } else if (baseWorkbook.worksheets) {
       // 如果 getWorksheet 方法不存在，尝试从 worksheets 数组中查找
-      originalWorksheet = baseWorkbook.worksheets.find(ws => ws.name === sheetData.name);
+      originalWorksheet = baseWorkbook.worksheets.find((ws: any) => ws.name === sheetData.name);
     }
     
     if (originalWorksheet) {
@@ -659,7 +676,7 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
       
       // 复制列设置
       if (originalWorksheet.columns && originalWorksheet.columns.length > 0) {
-        copiedWorksheet.columns = originalWorksheet.columns.map(col => ({
+        copiedWorksheet.columns = originalWorksheet.columns.map((col: any) => ({
           ...col,
           style: col.style ? { ...col.style } : undefined
         }));
@@ -678,8 +695,8 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
       }
       
       // 复制单元格数据和样式
-      originalWorksheet.eachRow((row, rowNumber) => {
-        row.eachCell((cell, colNumber) => {
+      originalWorksheet.eachRow((row: any, rowNumber: any) => {
+        row.eachCell((cell: any, colNumber: any) => {
           const newCell = copiedWorksheet.getCell(rowNumber, colNumber);
           
           // 复制值
@@ -704,16 +721,16 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
       });
       
       // 复制行高
-      originalWorksheet.eachRow((row, rowNumber) => {
+      originalWorksheet.eachRow((row: any, rowNumber: any) => {
         if (row.height) {
           copiedWorksheet.getRow(rowNumber).height = row.height;
         }
       });
     } else {
       // 如果没有原始工作表，则使用createWorksheetFromSheetData创建
-      createWorksheetFromSheetData(sheetData, options, newWorkbook);
+      await createWorksheetFromSheetData(sheetData, options, newWorkbook);
     }
-  });
+  }
   
   return newWorkbook;
 };
@@ -721,7 +738,8 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
 /**
  * 从SheetData创建工作表 - 保留原始样式和公式
  */
-const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOptions, targetWorkbook?: ExcelJS.Workbook): ExcelJS.Worksheet => {
+const createWorksheetFromSheetData = async (sheetData: SheetData, _options: ExportOptions, targetWorkbook?: any): Promise<any> => {
+  const ExcelJS = await initExcelJS();
   
   // 如果有原始workbook，直接使用原始工作表
   if (sheetData.originalWorkbook) {
@@ -962,13 +980,14 @@ export const exportToExcel = async (
     // 检查是否所有sheet都有原始workbook信息
     const hasOriginalWorkbook = selectedSheets.every(sheet => sheet.originalWorkbook);
     
-    let workbook: ExcelJS.Workbook;
+    let workbook: any;
     
     if (hasOriginalWorkbook) {
       // 使用原始workbook对象，保留所有格式信息
-      workbook = createWorkbookFromOriginal(selectedSheets, options);
+      workbook = await createWorkbookFromOriginal(selectedSheets, options);
     } else {
       // 创建新的工作簿
+      const ExcelJS = await initExcelJS();
       workbook = new ExcelJS.Workbook();
       
       // 设置工作簿属性
@@ -978,9 +997,9 @@ export const exportToExcel = async (
       workbook.modified = new Date();
       
       // 为每个选中的sheet创建工作表
-      selectedSheets.forEach(sheetData => {
-        createWorksheetFromSheetData(sheetData, options, workbook);
-      });
+      for (const sheetData of selectedSheets) {
+        await createWorksheetFromSheetData(sheetData, options, workbook);
+      }
     }
     
     // 生成Excel文件
@@ -1021,6 +1040,7 @@ const exportSingleSheetTauri = async (
   tauriFs: any
 ): Promise<void> => {
   // 创建新工作簿
+  const ExcelJS = await initExcelJS();
   const workbook = new ExcelJS.Workbook();
   
   // 设置工作簿属性
@@ -1030,7 +1050,7 @@ const exportSingleSheetTauri = async (
   workbook.modified = new Date();
   
   // 创建工作表
-  createWorksheetFromSheetData(sheetData, options, workbook);
+  await createWorksheetFromSheetData(sheetData, options, workbook);
   
   // 生成Excel文件
   const excelBuffer = await workbook.xlsx.writeBuffer();
@@ -1061,6 +1081,7 @@ const exportToExcelBrowser = async (
   options: ExportOptions
 ): Promise<void> => {
   // 创建新工作簿
+  const ExcelJS = await initExcelJS();
   const workbook = new ExcelJS.Workbook();
   
   // 设置工作簿属性
@@ -1070,9 +1091,9 @@ const exportToExcelBrowser = async (
   workbook.modified = new Date();
   
   // 为每个选中的sheet创建工作表
-  selectedSheets.forEach(sheetData => {
-    createWorksheetFromSheetData(sheetData, options, workbook);
-  });
+  for (const sheetData of selectedSheets) {
+    await createWorksheetFromSheetData(sheetData, options, workbook);
+  }
   
   // 生成Excel文件
   const excelBuffer = await workbook.xlsx.writeBuffer();
@@ -1105,12 +1126,12 @@ const exportToExcelBrowser = async (
 /**
  * 验证导出的Excel文件样式是否正确保留
  */
-export const validateExportedStyles = async (originalWorkbook: ExcelJS.Workbook, exportedWorkbook: ExcelJS.Workbook): Promise<boolean> => {
+export const validateExportedStyles = async (originalWorkbook: any, exportedWorkbook: any): Promise<boolean> => {
   
   let allStylesPreserved = true;
   
   // 检查每个工作表
-  exportedWorkbook.worksheets.forEach(worksheet => {
+  exportedWorkbook.worksheets.forEach((worksheet: any) => {
     const originalWorksheet = originalWorkbook.getWorksheet(worksheet.name);
     
     if (!originalWorksheet) {
@@ -1146,8 +1167,8 @@ export const validateExportedStyles = async (originalWorkbook: ExcelJS.Workbook,
       let styledCellsMatch = 0;
       let totalCells = 0;
       
-    originalWorksheet.eachRow((row, rowNumber) => {
-      row.eachCell((cell, colNumber) => {
+    originalWorksheet.eachRow((row: any, rowNumber: any) => {
+      row.eachCell((cell: any, colNumber: any) => {
           totalCells++;
           
         const exportedCell = worksheet.getCell(rowNumber, colNumber);

@@ -1,5 +1,3 @@
-import * as ExcelJS from 'exceljs';
-
 // 定义消息类型
 interface WorkerMessage {
   type: 'PARSE_EXCEL' | 'SAVE_EXCEL';
@@ -26,6 +24,8 @@ interface ExcelWorkbook {
 
 // 处理Excel文件 - 保留所有格式信息
 async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
+  // 动态导入ExcelJS
+  const ExcelJS = await import('exceljs');
   
   try {
     // 创建新的工作簿实例
@@ -55,227 +55,96 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
         
         for (let colNumber = 1; colNumber <= columnCount; colNumber++) {
           const cell = worksheet.getCell(rowNumber, colNumber);
-          // 获取单元格值
-          let cellValue: any = '';
           
-          if (cell.value !== null && cell.value !== undefined) {
-            if (typeof cell.value === 'object' && 'result' in cell.value) {
-              // 公式单元格
-              cellValue = cell.value.result;
-              formulas[`${rowNumber}_${colNumber}`] = cell.value.formula;
-            } else if (typeof cell.value === 'object' && 'richText' in cell.value) {
-              // 富文本单元格 - 提取纯文本内容
-              const richTextValue = cell.value as any;
-              if (Array.isArray(richTextValue.richText)) {
-                cellValue = richTextValue.richText.map((item: any) => item.text || '').join('');
-              } else {
-                cellValue = richTextValue.richText?.text || '';
-              }
+          // 获取单元格值
+          let cellValue = cell.value;
+          
+          // 处理不同类型的值
+          if (cellValue === null || cellValue === undefined) {
+            cellValue = '';
+          } else if (typeof cellValue === 'object') {
+            // 处理公式、日期等复杂类型
+            if (cellValue && typeof cellValue === 'object' && 'formula' in cellValue) {
+              cellValue = (cellValue as any).result || '';
+              // 保存公式信息
+              const cellKey = `${rowNumber}_${colNumber}`;
+              formulas[cellKey] = (cellValue as any).formula;
+            } else if (cellValue instanceof Date) {
+              cellValue = cellValue.toISOString();
+            } else if (cellValue && typeof cellValue === 'object' && 'text' in cellValue) {
+              cellValue = (cellValue as any).text;
             } else {
-              cellValue = cell.value;
+              cellValue = String(cellValue);
             }
           }
           
-          rowData[colNumber - 1] = cellValue;
+          rowData.push(cellValue);
           
-          const cellAddress = `${rowNumber}_${colNumber}`;
-          
-          
-          // 提取样式信息 - 无论单元格是否有值都要提取样式
-          if (cell.style) {
-            
-            styles[cellAddress] = {
-              font: cell.style.font ? {
-                name: cell.style.font.name,
-                size: cell.style.font.size,
-                bold: cell.style.font.bold,
-                italic: cell.style.font.italic,
-                underline: cell.style.font.underline,
-                strike: cell.style.font.strike,
-                color: cell.style.font.color ? {
-                  argb: cell.style.font.color.argb,
-                  theme: cell.style.font.color.theme
-                } : undefined
-              } : undefined,
-              fill: cell.style.fill ? {
-                type: cell.style.fill.type,
-                pattern: (cell.style.fill as any).pattern,
-                fgColor: (cell.style.fill as any).fgColor ? {
-                  argb: (cell.style.fill as any).fgColor.argb,
-                  theme: (cell.style.fill as any).fgColor.theme
-                } : undefined,
-                bgColor: (cell.style.fill as any).bgColor ? {
-                  argb: (cell.style.fill as any).bgColor.argb,
-                  theme: (cell.style.fill as any).bgColor.theme
-                } : undefined
-              } : undefined,
-              border: cell.style.border ? {
-                top: cell.style.border.top ? {
-                  style: cell.style.border.top.style,
-                  color: cell.style.border.top.color ? {
-                    argb: cell.style.border.top.color.argb,
-                    theme: cell.style.border.top.color.theme
-                  } : undefined
-                } : undefined,
-                left: cell.style.border.left ? {
-                  style: cell.style.border.left.style,
-                  color: cell.style.border.left.color ? {
-                    argb: cell.style.border.left.color.argb,
-                    theme: cell.style.border.left.color.theme
-                  } : undefined
-                } : undefined,
-                bottom: cell.style.border.bottom ? {
-                  style: cell.style.border.bottom.style,
-                  color: cell.style.border.bottom.color ? {
-                    argb: cell.style.border.bottom.color.argb,
-                    theme: cell.style.border.bottom.color.theme
-                  } : undefined
-                } : undefined,
-                right: cell.style.border.right ? {
-                  style: cell.style.border.right.style,
-                  color: cell.style.border.right.color ? {
-                    argb: cell.style.border.right.color.argb,
-                    theme: cell.style.border.right.color.theme
-                  } : undefined
-                } : undefined,
-                diagonal: cell.style.border.diagonal ? {
-                  style: cell.style.border.diagonal.style,
-                  color: cell.style.border.diagonal.color ? {
-                    argb: cell.style.border.diagonal.color.argb,
-                    theme: cell.style.border.diagonal.color.theme
-                  } : undefined
-                } : undefined
-              } : undefined,
-              alignment: cell.style.alignment ? {
-                horizontal: cell.style.alignment.horizontal,
-                vertical: cell.style.alignment.vertical,
-                wrapText: cell.style.alignment.wrapText,
-                textRotation: cell.style.alignment.textRotation,
-                indent: cell.style.alignment.indent,
-                readingOrder: cell.style.alignment.readingOrder
-              } : undefined,
-              numFmt: cell.style.numFmt,
-              protection: cell.style.protection ? {
-                locked: cell.style.protection.locked,
-                hidden: cell.style.protection.hidden
-              } : undefined
-            };
-            
-          } else {
-            // 即使没有样式，也要记录空单元格，这样导出时能正确处理
-            styles[cellAddress] = {
-              font: undefined,
-              fill: undefined,
-              border: undefined,
-              alignment: undefined,
-              numFmt: undefined,
-              protection: undefined
-            };
-            
+          // 保存样式信息
+          if (cell.style && Object.keys(cell.style).length > 0) {
+            const cellKey = `${rowNumber}_${colNumber}`;
+            styles[cellKey] = cell.style;
           }
         }
         
-        data[rowNumber - 1] = rowData;
+        data.push(rowData);
       }
       
-      // 确保数据数组长度与行数一致
-      while (data.length < rowCount) {
-        data.push(new Array(columnCount).fill(''));
-      }
-
-      // 提取工作表级别的属性
-      properties.columnCount = worksheet.columnCount;
-      properties.rowCount = worksheet.rowCount;
+      // 保存工作表属性
+      properties.rowCount = rowCount;
+      properties.columnCount = columnCount;
+      properties.defaultRowHeight = worksheet.properties.defaultRowHeight;
+      properties.defaultColWidth = worksheet.properties.defaultColWidth;
       
-      // 列宽
-      if (worksheet.columns && worksheet.columns.length > 0) {
-        properties.columns = worksheet.columns.map(col => ({
-          width: col.width,
-          hidden: col.hidden,
-          style: col.style
-        }));
-      }
-      
-      // 行高
-      properties.rows = [];
-      worksheet.eachRow((row, rowNumber) => {
-        if (row.height) {
-          properties.rows[rowNumber - 1] = {
-            height: row.height,
-            hidden: row.hidden
-          };
-        }
-      });
-      
-      // 合并单元格
+      // 保存合并单元格信息
       if (worksheet.model && worksheet.model.merges) {
-        properties.merges = worksheet.model.merges.map((merge: any) => ({
-          top: merge.top,
-          left: merge.left,
-          bottom: merge.bottom,
-          right: merge.right
-        }));
+        properties.merges = worksheet.model.merges;
       }
       
-      // 保护设置 - 简化处理
-      if ((worksheet as any).protection) {
-        properties.protection = (worksheet as any).protection;
-      }
-      
-    
-    sheets.push({
+      sheets.push({
         name: worksheet.name,
         data: data,
-        totalRows: data.length,
-        totalCols: data.length > 0 ? data[0].length : 0,
-      styles: styles,
-      formulas: formulas,
-        properties: properties,
-        originalWorkbook: workbook // 保存原始workbook引用
+        totalRows: rowCount,
+        totalCols: columnCount,
+        styles: styles,
+        formulas: formulas,
+        properties: properties
+      });
+    }
+
+    return {
+      sheets: sheets,
+      workbook: workbook
+    };
+    
+  } catch (error) {
+    console.error('Excel解析错误:', error);
+    throw new Error(`Excel文件解析失败: ${error instanceof Error ? error.message : '未知错误'}`);
+  }
+}
+
+// Worker消息处理
+self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
+  try {
+    const { type, file } = event.data;
+    
+    if (type === 'PARSE_EXCEL' && file) {
+      const result = await parseExcel(file);
+      
+      self.postMessage({
+        type: 'SUCCESS',
+        data: result
+      });
+    } else {
+      self.postMessage({
+        type: 'ERROR',
+        error: '无效的消息类型或缺少文件数据'
+      });
+    }
+  } catch (error) {
+    self.postMessage({
+      type: 'ERROR',
+      error: error instanceof Error ? error.message : '未知错误'
     });
   }
-
-  return {
-    sheets: sheets,
-    workbook: workbook // 保留完整的workbook对象
-  };
-    
-  } catch (error) {
-    console.error('解析Excel文件失败:', error);
-    throw new Error(`解析Excel文件失败: ${error instanceof Error ? error.message : '未知错误'}`);
-  }
-}
-
-// 保存Excel文件 - 保留所有格式信息
-async function saveExcel(workbook: any, _filename: string): Promise<ArrayBuffer> {
-  
-  try {
-    // 使用ExcelJS的writeBuffer方法
-    const buffer = await workbook.xlsx.writeBuffer();
-    
-    return buffer;
-    
-  } catch (error) {
-    console.error('保存Excel文件失败:', error);
-    throw new Error(`保存Excel文件失败: ${error instanceof Error ? error.message : '未知错误'}`);
-  }
-}
-
-// 监听主线程消息
-self.addEventListener('message', async (e: MessageEvent<WorkerMessage>) => {
-  if (e.data.type === 'PARSE_EXCEL') {
-    try {
-      const excelWorkbook = await parseExcel(e.data.file!);
-      self.postMessage({ type: 'SUCCESS', data: excelWorkbook });
-    } catch (error) {
-      self.postMessage({ type: 'ERROR', error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  } else if (e.data.type === 'SAVE_EXCEL') {
-    try {
-      const fileBuffer = await saveExcel(e.data.workbook!, e.data.filename!);
-      self.postMessage({ type: 'SAVE_SUCCESS', data: fileBuffer });
-    } catch (error) {
-      self.postMessage({ type: 'ERROR', error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  }
-});
+};
