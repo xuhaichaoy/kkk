@@ -6,6 +6,7 @@ interface WorkerMessage {
   file?: ArrayBuffer;
   workbook?: any;
   filename?: string;
+  fileId?: string;
 }
 
 interface SheetData {
@@ -19,6 +20,7 @@ interface SheetData {
   richTextRuns?: { [cellKey: string]: any[] };
   properties?: any; // 工作表级别的属性（列宽、行高、合并单元格等）
   originalWorkbook?: any; // 原始workbook对象引用
+  sourceFileId?: string;
 }
 
 interface ExcelWorkbook {
@@ -267,6 +269,7 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
     
     sheets.push({
         name: worksheet.name,
+        originalName: worksheet.name,
         data: data,
         totalRows: data.length,
         totalCols: data.length > 0 ? data[0].length : 0,
@@ -274,7 +277,8 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
       formulas: formulas,
       richTextRuns,
         properties: properties,
-        originalWorkbook: workbook // 保存原始workbook引用
+        originalWorkbook: workbook, // 保存原始workbook引用
+        sourceFileId: undefined
     });
 
       // 调试日志：每个工作表的统计
@@ -321,9 +325,16 @@ self.addEventListener('message', async (e: MessageEvent<WorkerMessage>) => {
   if (e.data.type === 'PARSE_EXCEL') {
     try {
       const excelWorkbook = await parseExcel(e.data.file!);
-      self.postMessage({ type: 'SUCCESS', data: excelWorkbook });
+      try {
+        if (Array.isArray((excelWorkbook as any).sheets)) {
+          (excelWorkbook as any).sheets.forEach((sheet: any) => {
+            sheet.sourceFileId = e.data.fileId;
+          });
+        }
+      } catch (_) {}
+      self.postMessage({ type: 'SUCCESS', data: excelWorkbook, fileId: e.data.fileId });
     } catch (error) {
-      self.postMessage({ type: 'ERROR', error: error instanceof Error ? error.message : 'Unknown error' });
+      self.postMessage({ type: 'ERROR', error: error instanceof Error ? error.message : 'Unknown error', fileId: e.data.fileId });
     }
   } else if (e.data.type === 'SAVE_EXCEL') {
     try {

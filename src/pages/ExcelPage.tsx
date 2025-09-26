@@ -3,12 +3,20 @@ import { Box } from '@mui/material';
 import FileUpload from '../components/FileUpload';
 import ExcelViewer from '../components/ExcelViewer';
 import { PageHeader, CardContainer, FileInfo } from '../components/common';
+import { getFileId } from '../utils/excelUtils';
 
 const ExcelPage: React.FC = () => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
+  const handleFileSelect = (files: File[]) => {
+    setSelectedFiles(prev => {
+      const existingIds = new Set(prev.map(file => getFileId(file)));
+      const deduped = files.filter(file => !existingIds.has(getFileId(file)));
+      if (deduped.length === 0) {
+        return prev;
+      }
+      return [...prev, ...deduped];
+    });
   };
 
   return (
@@ -28,22 +36,24 @@ const ExcelPage: React.FC = () => {
       <Box sx={{ position: 'relative' }}>
         <CardContainer>
           <FileUpload onFileSelect={handleFileSelect} />
-          {selectedFile && (
-            <Box sx={{ mt: 3 }}>
-              <FileInfo file={selectedFile} />
+          {selectedFiles.length > 0 && (
+            <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {selectedFiles.map((file, index) => (
+                <FileInfo key={getFileId(file) || index} file={file} variant="detailed" showLastModified showType />
+              ))}
             </Box>
           )}
         </CardContainer>
 
-        {selectedFile && (
+        {selectedFiles.length > 0 && (
           <Box 
             sx={{
               mt: 3,
-              opacity: selectedFile ? 1 : 0
+              opacity: selectedFiles.length > 0 ? 1 : 0
             }}
           >
             <CardContainer minHeight="500px">
-              <ExcelViewer file={selectedFile} />
+              <ExcelViewer files={selectedFiles} />
             </CardContainer>
           </Box>
         )}

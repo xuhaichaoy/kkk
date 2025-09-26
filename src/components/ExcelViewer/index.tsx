@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { 
   Box, 
   Typography, 
@@ -16,16 +16,17 @@ import {
   exportToCSV,
   mergeSheets,
   exportToExcel,
-  ExportOptions
+  ExportOptions,
+  generateUniqueSheetName
 } from '../../utils/excelUtils';
-import { validateFileFormat } from '../../utils/commonUtils';
 
 interface ExcelViewerProps {
-  file: File | null;
+  files: File[];
 }
 
+const STORAGE_KEY = 'excel_multi_upload';
 
-const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
+const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
   const [sheets, setSheets] = useState<SheetData[]>([]);
   const [currentSheet, setCurrentSheet] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -34,11 +35,13 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [originalBuffer, setOriginalBuffer] = useState<ArrayBuffer | null>(null);
+  const [fileBuffers, setFileBuffers] = useState<Record<string, ArrayBuffer>>({});
+  const [processedFileIds, setProcessedFileIds] = useState<string[]>([]);
+  const processingFileIds = useRef<Set<string>>(new Set());
 
   // 初始化编辑数据，从本地存储加载
   const [editedRows, setEditedRows] = useState<EditedRowData>(() => {
-    return loadEditedData(getFileId(file));
+    return loadEditedData(STORAGE_KEY);
   });
 
   // 删除选中的行
@@ -64,7 +67,6 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
     // 更新编辑数据，删除被删除行的编辑记录
     setEditedRows(prev => {
       const newEditedRows = { ...prev };
-      const fileId = getFileId(file);
       
       // 删除被删除行的编辑数据
       sortedIndexes.forEach(rowIndex => {
@@ -94,10 +96,10 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
       });
       
       // 保存更新后的编辑数据到本地存储
-      saveEditedData(fileId, newEditedRows);
+      saveEditedData(STORAGE_KEY, newEditedRows);
       return newEditedRows;
     });
-  }, [sheets, currentSheet, file, getFileId, saveEditedData]);
+  }, [sheets, currentSheet]);
 
   // 添加新行
   const handleAddRow = useCallback(() => {
@@ -182,88 +184,150 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
 
   const handleConfirmExport = useCallback(async (selectedSheets: SheetData[], options: ExportOptions) => {
     try {
-      await exportToExcel(selectedSheets, { ...options, originalBuffer: originalBuffer || undefined });
+      const sourceIds = Array.from(new Set(selectedSheets.map(sheet => sheet.sourceFileId).filter(Boolean))) as string[];
+      const singleSourceId = sourceIds.length === 1 ? sourceIds[0] : undefined;
+      const originalBuffer = singleSourceId ? fileBuffers[singleSourceId] : undefined;
+      await exportToExcel(selectedSheets, { ...options, originalBuffer });
       setExportDialogOpen(false);
     } catch (err) {
       console.error('导出Excel失败:', err);
       setError(err instanceof Error ? err.message : '导出失败');
     }
-  }, [originalBuffer]);
+  }, [fileBuffers]);
 
+  const processExcel = useCallback((file: File): Promise<void> => {
+    const fileId = getFileId(file);
+    return new Promise(async (resolve, reject) => {
+      try {
+        const buffer = await file.arrayBuffer();
+        setFileBuffers(prev => ({ ...prev, [fileId]: buffer }));
 
-  const processExcel = useCallback(async (file: File) => {
-    setLoading(true);
-    setError(null);
+        const worker = new Worker(new URL('../../workers/excelWorker.ts', import.meta.url), {
+          type: 'module'
+        });
 
-    try {
-      // 检查文件格式
-      const validation = validateFileFormat(file);
-      if (!validation.isValid) {
-        setError(validation.error || '文件格式不支持');
-        setLoading(false);
-        return;
-      }
+        worker.postMessage({
+          type: 'PARSE_EXCEL',
+          file: buffer,
+          fileId
+        });
 
-      const worker = new Worker(new URL('../../workers/excelWorker.ts', import.meta.url), {
-        type: 'module'
-      });
-
-      const buffer = await file.arrayBuffer();
-      setOriginalBuffer(buffer);
-
-      worker.postMessage({
-        type: 'PARSE_EXCEL',
-        file: buffer
-      });
-
-      worker.onmessage = (e) => {
-        if (e.data.type === 'SUCCESS') {
-          // Worker返回的是 { sheets: [], workbook: {} } 结构
-          const sheets = e.data.data.sheets || e.data.data;
-          const workbook = e.data.data.workbook;
-          // 诊断：检测原始workbook是否可用（跨worker传递后方法可能丢失）
-          try {
-            console.log('[excelViewer] received workbook diagnostics:', {
-              hasWorkbook: !!workbook,
-              hasGetWorksheet: typeof workbook?.getWorksheet === 'function',
-              hasWorksheetsArray: Array.isArray(workbook?.worksheets),
-              worksheetCount: Array.isArray(workbook?.worksheets) ? workbook.worksheets.length : undefined,
-            });
-          } catch (_) {}
-          
-          // 检查是否有工作表
-          if (!sheets || sheets.length === 0) {
-            setError('文件解析成功但没有找到工作表数据。请检查文件是否为有效的Excel文件。');
-            setLoading(false);
-            worker.terminate();
-            return;
+        worker.onmessage = (e) => {
+          const { type, data, error, fileId: responseFileId } = e.data;
+          if (type === 'SUCCESS') {
+            const parsedSheets = data.sheets || data;
+            if (!parsedSheets || parsedSheets.length === 0) {
+              setError('文件解析成功但没有找到工作表数据。请检查文件是否为有效的Excel文件。');
+            } else {
+              setError(null);
+              setSheets(prev => {
+                const accumulated: SheetData[] = [];
+                const nextSheets = parsedSheets.map((sheet: any, index: number) => {
+                  const baseName = sheet.name || `Sheet${index + 1}`;
+                  const uniqueName = generateUniqueSheetName(baseName, [...prev, ...accumulated]);
+                  const originalName = sheet.originalName || sheet.name || baseName;
+                  const normalizedSheet: SheetData = {
+                    ...sheet,
+                    name: uniqueName,
+                    originalName,
+                    originalWorkbook: null,
+                    sourceFileId: responseFileId || fileId
+                  };
+                  accumulated.push(normalizedSheet);
+                  return normalizedSheet;
+                });
+                const merged = [...prev];
+                nextSheets.forEach(sheet => {
+                  if (
+                    sheet.sourceFileId && sheet.originalName &&
+                    merged.some(existing => existing.sourceFileId === sheet.sourceFileId && existing.originalName === sheet.originalName)
+                  ) {
+                    return;
+                  }
+                  merged.push(sheet);
+                });
+                return merged;
+              });
+              const idToStore = responseFileId || fileId;
+              setProcessedFileIds(prev => (prev.includes(idToStore) ? prev : [...prev, idToStore]));
+            }
+          } else if (type === 'ERROR') {
+            console.error('Excel parsing error:', error);
+            setError(error);
           }
-          
-          // 为每个sheet添加原始workbook引用
-          const sheetsWithWorkbook = sheets.map((sheet: any) => ({
-            ...sheet,
-            originalWorkbook: workbook
-          }));
-          
-          setSheets(sheetsWithWorkbook);
-        } else if (e.data.type === 'ERROR') {
-          console.error('Excel parsing error:', e.data.error);
-          setError(e.data.error);
-        }
-        setLoading(false);
-        worker.terminate();
-      };
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '处理Excel文件时出错');
-      setLoading(false);
-    }
+          worker.terminate();
+          resolve();
+        };
+
+        worker.onerror = (event) => {
+          console.error('Excel worker error:', event.message);
+          worker.terminate();
+          setError(event.message || '解析Excel时出错');
+          reject(new Error(event.message));
+        };
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '处理Excel文件时出错');
+        reject(err as Error);
+      }
+    });
   }, []);
 
   useEffect(() => {
-    if (file) {
-      processExcel(file);
+    if (!files || files.length === 0) {
+      setSheets([]);
+      setProcessedFileIds([]);
+      setFileBuffers({});
+      setEditedRows(loadEditedData(STORAGE_KEY));
+      setCurrentSheet(0);
+      setError(null);
+      setLoading(false);
+      return;
     }
-  }, [file, processExcel]);
+
+    const pendingFiles = files.filter(file => {
+      const id = getFileId(file);
+      return !processedFileIds.includes(id) && !processingFileIds.current.has(id);
+    });
+
+    let cancelled = false;
+
+    (async () => {
+      setError(null);
+      if (pendingFiles.length > 0) {
+        setLoading(true);
+      }
+      try {
+        for (const file of pendingFiles) {
+          if (cancelled) break;
+          const fileId = getFileId(file);
+          processingFileIds.current.add(fileId);
+          try {
+            await processExcel(file);
+          } catch (err) {
+            if (!cancelled) {
+              throw err;
+            }
+          } finally {
+            processingFileIds.current.delete(fileId);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : '处理Excel文件时出错');
+        }
+      } finally {
+        if (!cancelled) {
+          if (pendingFiles.length > 0) {
+            setLoading(false);
+          }
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [files, processedFileIds, processExcel]);
 
   const handleSheetChange = (_event: React.SyntheticEvent, newValue: number) => {
     setCurrentSheet(newValue);
@@ -418,7 +482,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ file }) => {
                           [changedField]: updatedRow[changedField],
                         },
                       };
-                      saveEditedData(getFileId(file), newData);
+                      saveEditedData(STORAGE_KEY, newData);
                       return newData;
                     });
                   }

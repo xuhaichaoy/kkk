@@ -26,7 +26,7 @@ import {
   Paper
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { SheetData, compareSheets, ComparisonResult } from '../../utils/excelUtils';
+import { SheetData, compareSheets, ComparisonResult, formatCellValue } from '../../utils/excelUtils';
 
 interface CompareSheetsDialogProps {
   open: boolean;
@@ -208,7 +208,17 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                       <TableHead>
                         <TableRow>
                           {sheets[firstSheetIndex]?.data[0]?.map((header, index) => (
-                            <TableCell key={index}>{header}</TableCell>
+                            <TableCell
+                              key={index}
+                              sx={{
+                                minWidth: 140,
+                                whiteSpace: 'normal',
+                                wordBreak: 'break-word',
+                                fontWeight: 600
+                              }}
+                            >
+                              {header || `列${index + 1}`}
+                            </TableCell>
                           ))}
                         </TableRow>
                       </TableHead>
@@ -216,7 +226,12 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                         {comparisonResult.dataDifferences.uniqueToFirst.slice(0, 10).map((row, rowIndex) => (
                           <TableRow key={rowIndex}>
                             {row.map((cell, cellIndex) => (
-                              <TableCell key={cellIndex}>{String(cell)}</TableCell>
+                              <TableCell
+                                key={cellIndex}
+                                sx={{ minWidth: 140, whiteSpace: 'normal', wordBreak: 'break-word' }}
+                              >
+                                {formatCellValue(cell)}
+                              </TableCell>
                             ))}
                           </TableRow>
                         ))}
@@ -246,7 +261,17 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                       <TableHead>
                         <TableRow>
                           {sheets[secondSheetIndex]?.data[0]?.map((header, index) => (
-                            <TableCell key={index}>{header}</TableCell>
+                            <TableCell
+                              key={index}
+                              sx={{
+                                minWidth: 140,
+                                whiteSpace: 'normal',
+                                wordBreak: 'break-word',
+                                fontWeight: 600
+                              }}
+                            >
+                              {header || `列${index + 1}`}
+                            </TableCell>
                           ))}
                         </TableRow>
                       </TableHead>
@@ -254,7 +279,12 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                         {comparisonResult.dataDifferences.uniqueToSecond.slice(0, 10).map((row, rowIndex) => (
                           <TableRow key={rowIndex}>
                             {row.map((cell, cellIndex) => (
-                              <TableCell key={cellIndex}>{String(cell)}</TableCell>
+                              <TableCell
+                                key={cellIndex}
+                                sx={{ minWidth: 140, whiteSpace: 'normal', wordBreak: 'break-word' }}
+                              >
+                                {formatCellValue(cell)}
+                              </TableCell>
                             ))}
                           </TableRow>
                         ))}
@@ -288,7 +318,7 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                         {modifiedRow.differences.map((diff, diffIndex) => (
                           <Chip
                             key={diffIndex}
-                            label={`${diff.column}: "${diff.firstValue}" → "${diff.secondValue}"`}
+                            label={`${diff.column}: "${formatCellValue(diff.firstValue)}" → "${formatCellValue(diff.secondValue)}"`}
                             size="small"
                             color="warning"
                             variant="outlined"

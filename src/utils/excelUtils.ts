@@ -15,6 +15,8 @@ export interface SheetData {
   richTextRuns?: { [cellKey: string]: any[] };
   properties?: any; // 工作表级别的属性（列宽、行高、合并单元格等）
   originalWorkbook?: any; // 原始workbook对象引用
+  sourceFileId?: string; // 来源文件标识，用于多文件管理
+  originalName?: string; // 原始sheet名称（用于去重）
 }
 
 export interface EditedRowData {
@@ -274,6 +276,7 @@ export const splitTableByColumn = (
     
     return {
       name: uniqueName,
+      originalName: uniqueName,
       data: [headers, ...filteredRows],
       totalRows: filteredRows.length,
       totalCols: headers.length,
@@ -281,7 +284,8 @@ export const splitTableByColumn = (
       formulas: newFormulas,
       richTextRuns: newRichTextRuns,
       properties: newProperties,
-      originalWorkbook: sheetData.originalWorkbook // 保留原始workbook引用
+      originalWorkbook: sheetData.originalWorkbook, // 保留原始workbook引用
+      sourceFileId: sheetData.sourceFileId
     };
   });
 };
@@ -492,9 +496,12 @@ export const mergeSheets = (
 
   // 生成唯一的sheet名称
   const uniqueName = generateUniqueSheetName(mergedSheetName, existingSheets);
+  const sourceIds = Array.from(new Set(sheets.map(sheet => sheet.sourceFileId).filter(Boolean)));
+  const mergedSourceId = sourceIds.length === 1 ? sourceIds[0] : undefined;
 
   return {
     name: uniqueName,
+    originalName: uniqueName,
     data: mergedData,
     totalRows: mergedData.length - 1,
     totalCols: allColumns.length,
@@ -502,7 +509,8 @@ export const mergeSheets = (
     formulas: mergedFormulas,
     richTextRuns: mergedRichText,
     properties: buildMergedProperties(sheets, allColumns, mergedRowProps),
-    originalWorkbook: sheets[0].originalWorkbook // 保留第一个sheet的原始workbook引用
+    originalWorkbook: sheets[0].originalWorkbook, // 保留第一个sheet的原始workbook引用
+    sourceFileId: mergedSourceId
   };
 };
 

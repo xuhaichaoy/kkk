@@ -3,10 +3,8 @@ import { Box, Button, Typography } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { useFileUpload } from '../../hooks/useCommon';
-import { validateFileFormat } from '../../utils/commonUtils';
-
 interface FileUploadProps {
-  onFileSelect: (file: File) => void;
+  onFileSelect: (files: File[]) => void;
 }
 
 const UploadBox = styled(Box)(({ theme }) => ({
@@ -34,15 +32,6 @@ const UploadBox = styled(Box)(({ theme }) => ({
 }));
 
 const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
-  const validateAndSelectFile = (file: File) => {
-    const validation = validateFileFormat(file);
-    if (validation.isValid) {
-      onFileSelect(file);
-    } else {
-      alert(validation.error);
-    }
-  };
-
   const {
     isDragOver,
     fileInputRef,
@@ -51,7 +40,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
     handleDragLeave,
     handleFileSelect,
     handleClick
-  } = useFileUpload(validateAndSelectFile);
+  } = useFileUpload(onFileSelect);
 
   return (
     <UploadBox
@@ -73,6 +62,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
         ref={fileInputRef}
         type="file"
         accept=".xlsx,.xls"
+        multiple
         onChange={handleFileSelect}
         style={{ display: 'none' }}
         id="excel-file-input"
@@ -123,6 +113,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
           不支持.numbers格式
           <br />
           拖拽文件到这里或点击选择
+          <br />
+          可多次上传，新的工作表会追加
         </Typography>
       </Box>
 

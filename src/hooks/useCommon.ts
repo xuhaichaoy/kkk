@@ -7,29 +7,42 @@ import { validateFileFormat } from '../utils/commonUtils';
 /**
  * 文件上传Hook
  */
-export const useFileUpload = (onFileSelect: (file: File) => void) => {
+export const useFileUpload = (onFilesSelect: (files: File[]) => void) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const validateAndSelectFile = useCallback((file: File) => {
-    const validation = validateFileFormat(file);
-    if (validation.isValid) {
-      onFileSelect(file);
-    } else {
-      alert(validation.error);
+  const validateAndSelectFiles = useCallback((fileList: FileList | File[]) => {
+    const validFiles: File[] = [];
+    const invalidFiles: string[] = [];
+
+    Array.from(fileList).forEach(file => {
+      const validation = validateFileFormat(file);
+      if (validation.isValid) {
+        validFiles.push(file);
+      } else if (validation.error) {
+        invalidFiles.push(`${file.name}: ${validation.error}`);
+      }
+    });
+
+    if (invalidFiles.length) {
+      alert(`以下文件无法上传:\n${invalidFiles.join('\n')}`);
     }
-  }, [onFileSelect]);
+
+    if (validFiles.length) {
+      onFilesSelect(validFiles);
+    }
+  }, [onFilesSelect]);
 
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
 
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      validateAndSelectFile(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length) {
+      validateAndSelectFiles(files);
     }
-  }, [validateAndSelectFile]);
+  }, [validateAndSelectFiles]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -44,11 +57,15 @@ export const useFileUpload = (onFileSelect: (file: File) => void) => {
   }, []);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      validateAndSelectFile(file);
+    const files = e.target.files;
+    if (files && files.length) {
+      validateAndSelectFiles(files);
     }
-  }, [validateAndSelectFile]);
+    // 允许选择同一文件多次
+    if (e.target) {
+      e.target.value = '';
+    }
+  }, [validateAndSelectFiles]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
