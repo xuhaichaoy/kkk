@@ -110,6 +110,65 @@ export const getRowsWithEdits = (
   });
 };
 
+export interface ExportContext {
+  editedCellMap?: Map<string, Set<string>>;
+}
+
+export interface PreparedSheetResult {
+  sheet: SheetData;
+  editedCells?: Set<string>;
+}
+
+export const prepareSheetForExport = (
+  sheet: SheetData,
+  sheetIndex: number,
+  editedRows: EditedRowData | undefined
+): PreparedSheetResult => {
+  if (!editedRows || sheetIndex < 0) {
+    return { sheet };
+  }
+
+  const dataRows = sheet.data.slice(1);
+  let hasEdits = false;
+  const editedCells = new Set<string>();
+
+  const rowsWithEdits = getRowsWithEdits(dataRows, sheetIndex, editedRows);
+  const updatedRows = rowsWithEdits.map((row, rowIdx) => {
+    const edits = editedRows[`${sheetIndex}_${rowIdx}`];
+    if (edits && Object.keys(edits).length > 0) {
+      hasEdits = true;
+      Object.keys(edits).forEach(colKey => {
+        const colIndex = Number(colKey);
+        if (!Number.isNaN(colIndex)) {
+          editedCells.add(`${rowIdx + 2}_${colIndex + 1}`);
+        }
+      });
+    }
+    return [...row];
+  });
+
+  if (!hasEdits) {
+    return { sheet };
+  }
+
+  const originalHeader = sheet.data[0];
+  const headerRow = Array.isArray(originalHeader) ? [...originalHeader] : [];
+  const updatedData = [headerRow, ...updatedRows];
+  const maxCols = updatedRows.reduce((max, row) => Math.max(max, row.length), headerRow.length);
+
+  const updatedSheet: SheetData = {
+    ...sheet,
+    data: updatedData,
+    totalRows: updatedRows.length,
+    totalCols: maxCols
+  };
+
+  return {
+    sheet: updatedSheet,
+    editedCells: editedCells.size > 0 ? editedCells : undefined
+  };
+};
+
 /**
  * 获取列的唯一值
  */
@@ -863,7 +922,93 @@ const adjustFormulaRowReferences = (formula: string, rowOffset: number): string 
 /**
  * 从原始workbook创建工作簿，保留所有格式信息
  */
-const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: ExportOptions): ExcelJS.Workbook => {
+const populateWorksheetData = (
+  worksheet: ExcelJS.Worksheet,
+  sheetData: SheetData,
+  options: ExportOptions,
+  editedCells?: Set<string>
+) => {
+  const rows = Array.isArray(sheetData.data) ? sheetData.data : [];
+  if (rows.length === 0) {
+    const existingRowCount = worksheet.rowCount;
+    for (let rowNumber = 1; rowNumber <= existingRowCount; rowNumber++) {
+      const row = worksheet.getRow(rowNumber);
+      row.eachCell(cell => {
+        if (cell.value !== null && cell.value !== undefined) {
+          cell.value = null;
+        }
+      });
+    }
+    return;
+  }
+
+  const resolvedTotalCols = rows.reduce((max, row) => {
+    if (Array.isArray(row)) {
+      return Math.max(max, row.length);
+    }
+    return max;
+  }, 0);
+
+  const maxColumnIndex = Math.max(worksheet.columnCount, resolvedTotalCols);
+
+  rows.forEach((row, rowIndex) => {
+    const worksheetRow = worksheet.getRow(rowIndex + 1);
+    const isHeader = rowIndex === 0;
+    const rowArray = Array.isArray(row) ? row : [];
+    const rowLength = rowArray.length;
+
+    for (let colIndex = 0; colIndex < resolvedTotalCols; colIndex++) {
+      const cell = worksheetRow.getCell(colIndex + 1);
+      const cellKey = `${rowIndex + 1}_${colIndex + 1}`;
+      const value = colIndex < rowLength ? rowArray[colIndex] : undefined;
+      const isEdited = editedCells?.has(cellKey);
+
+      if (!isEdited && !isHeader && options.preserveFormulas && sheetData.formulas && sheetData.formulas[cellKey]) {
+        cell.value = {
+          formula: sheetData.formulas[cellKey],
+          result: value ?? null,
+          sharedFormula: undefined
+        } as any;
+      } else if (!isEdited && sheetData.richTextRuns && sheetData.richTextRuns[cellKey]) {
+        const runs = sheetData.richTextRuns[cellKey];
+        cell.value = {
+          richText: runs.map((rt: any) => ({
+            text: rt.text,
+            font: rt.font ? { ...rt.font } : undefined
+          }))
+        } as any;
+      } else {
+        cell.value = value === '' || value === undefined ? null : value;
+      }
+    }
+
+    for (let colIndex = rowLength + 1; colIndex <= resolvedTotalCols; colIndex++) {
+      const cell = worksheetRow.getCell(colIndex);
+      if (cell.value !== null && cell.value !== undefined) {
+        cell.value = null;
+      }
+    }
+
+    for (let colIndex = resolvedTotalCols + 1; colIndex <= maxColumnIndex; colIndex++) {
+      const cell = worksheetRow.getCell(colIndex);
+      if (cell.value !== null && cell.value !== undefined) {
+        cell.value = null;
+      }
+    }
+  });
+
+  const currentRowCount = worksheet.rowCount;
+  for (let rowNumber = rows.length + 1; rowNumber <= currentRowCount; rowNumber++) {
+    const row = worksheet.getRow(rowNumber);
+    row.eachCell(cell => {
+      if (cell.value !== null && cell.value !== undefined) {
+        cell.value = null;
+      }
+    });
+  }
+};
+
+const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: ExportOptions, context: ExportContext = {}): ExcelJS.Workbook => {
   // 使用第一个sheet的原始workbook作为基础
   const baseWorkbook = selectedSheets[0].originalWorkbook as ExcelJS.Workbook;
   
@@ -997,6 +1142,8 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
           copiedWorksheet.getRow(rowNumber).height = row.height;
         }
       });
+      populateWorksheetData(copiedWorksheet, sheetData, options, context.editedCellMap?.get(sheetData.name));
+
       try {
         console.log('[excelExport] copied sheet stats:', {
           name: sheetData.name,
@@ -1008,7 +1155,7 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
     } else {
       // 如果没有原始工作表，则使用createWorksheetFromSheetData创建
       try { console.warn(`[excelExport] original worksheet not found, fallback: ${sheetData.name}`); } catch (_) {}
-      createWorksheetFromSheetData(sheetData, options, newWorkbook);
+      createWorksheetFromSheetData(sheetData, options, newWorkbook, context.editedCellMap?.get(sheetData.name));
     }
   });
   
@@ -1018,7 +1165,12 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
 /**
  * 从SheetData创建工作表 - 保留原始样式和公式
  */
-const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOptions, targetWorkbook?: ExcelJS.Workbook): ExcelJS.Worksheet => {
+const createWorksheetFromSheetData = (
+  sheetData: SheetData,
+  options: ExportOptions,
+  targetWorkbook?: ExcelJS.Workbook,
+  editedCells?: Set<string>
+): ExcelJS.Worksheet => {
   
   // 如果有原始workbook，直接使用原始工作表
   if (sheetData.originalWorkbook) {
@@ -1043,43 +1195,8 @@ const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOpti
     defaultColWidth: 10
   } as any;
   
-        // 添加数据到工作表
-        let createdFormulaCells = 0;
-        sheetData.data.forEach((row, rowIndex) => {
-          const worksheetRow = worksheet.getRow(rowIndex + 1);
-          
-          row.forEach((cell, colIndex) => {
-            const cellAddress = worksheetRow.getCell(colIndex + 1);
-            const normalizedValue = cell === '' ? null : cell;
-            
-            // 检查是否有公式
-            const cellKey = `${rowIndex + 1}_${colIndex + 1}`;
-            if (sheetData.richTextRuns && sheetData.richTextRuns[cellKey]) {
-              // 优先还原富文本（保留局部颜色/样式）
-              const runs = sheetData.richTextRuns[cellKey];
-              cellAddress.value = {
-                richText: runs.map((rt: any) => ({
-                  text: rt.text,
-                  font: rt.font ? { ...rt.font } : undefined
-                }))
-              } as any;
-            } else if (sheetData.formulas && sheetData.formulas[cellKey]) {
-              // 公式单元格
-              cellAddress.value = {
-                formula: sheetData.formulas[cellKey],
-                result: normalizedValue === null ? undefined : normalizedValue,
-                sharedFormula: undefined
-              } as any;
-              createdFormulaCells++;
-            } else {
-              cellAddress.value = normalizedValue;
-            }
-            
-            // 样式将在数据添加完成后统一处理
-          });
-    
-  });
-  
+  populateWorksheetData(worksheet, sheetData, options, editedCells);
+
   // 处理所有样式信息，包括空单元格的样式
   if (sheetData.styles) {
     let appliedStyledCells = 0;
@@ -1190,7 +1307,6 @@ const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOpti
     try {
       console.log('[excelExport] rebuilt sheet from data:', {
         name: sheetData.name,
-        createdFormulaCells,
         appliedStyledCells,
         merges: sheetData.properties?.merges?.length || 0,
       });
@@ -1274,7 +1390,8 @@ const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOpti
  */
 export const exportToExcel = async (
   selectedSheets: SheetData[],
-  options: ExportOptions
+  options: ExportOptions,
+  context: ExportContext = {}
 ): Promise<void> => {
   try {
     let tauriDialog;
@@ -1285,13 +1402,13 @@ export const exportToExcel = async (
       tauriFs = await import('@tauri-apps/plugin-fs');
     } catch (err) {
       console.warn('Tauri API不可用，回退到浏览器下载', err);
-      return exportToExcelBrowser(selectedSheets, options);
+      return exportToExcelBrowser(selectedSheets, options, context);
     }
     
     // 如果选择分别导出每个sheet为单独文件
     if (options.separateFiles) {
       for (const sheet of selectedSheets) {
-        await exportSingleSheetTauri(sheet, options, tauriDialog, tauriFs);
+        await exportSingleSheetTauri(sheet, options, tauriDialog, tauriFs, context);
       }
       return;
     }
@@ -1319,11 +1436,11 @@ export const exportToExcel = async (
     if (reloadedWorkbook) {
       // 用缓冲区重载的workbook进行复制
       const patched = selectedSheets.map(s => ({ ...s, originalWorkbook: reloadedWorkbook! }));
-      workbook = createWorkbookFromOriginal(patched, options);
+      workbook = createWorkbookFromOriginal(patched, options, context);
     } else if (hasOriginalWorkbook && hasUsableOriginalWorkbook) {
       // 使用原始workbook对象，保留所有格式信息
       try { console.log('[excelExport] strategy=copy-original', { sheetNames: selectedSheets.map(s => s.name) }); } catch (_) {}
-      workbook = createWorkbookFromOriginal(selectedSheets, options);
+      workbook = createWorkbookFromOriginal(selectedSheets, options, context);
     } else {
       // 创建新的工作簿
       try { console.log('[excelExport] strategy=rebuild-from-data', { hasOriginalWorkbook, hasUsableOriginalWorkbook }); } catch (_) {}
@@ -1337,7 +1454,7 @@ export const exportToExcel = async (
       
       // 为每个选中的sheet创建工作表
       selectedSheets.forEach(sheetData => {
-        createWorksheetFromSheetData(sheetData, options, workbook);
+        createWorksheetFromSheetData(sheetData, options, workbook, context.editedCellMap?.get(sheetData.name));
       });
     }
     
@@ -1376,7 +1493,8 @@ const exportSingleSheetTauri = async (
   sheetData: SheetData,
   options: ExportOptions,
   tauriDialog: any,
-  tauriFs: any
+  tauriFs: any,
+  context: ExportContext
 ): Promise<void> => {
   // 创建新工作簿
   const workbook = new ExcelJS.Workbook();
@@ -1388,7 +1506,7 @@ const exportSingleSheetTauri = async (
   workbook.modified = new Date();
   
   // 创建工作表
-  createWorksheetFromSheetData(sheetData, options, workbook);
+  createWorksheetFromSheetData(sheetData, options, workbook, context.editedCellMap?.get(sheetData.name));
   
   // 生成Excel文件
   const excelBuffer = await workbook.xlsx.writeBuffer();
@@ -1416,7 +1534,8 @@ const exportSingleSheetTauri = async (
  */
 const exportToExcelBrowser = async (
   selectedSheets: SheetData[],
-  options: ExportOptions
+  options: ExportOptions,
+  context: ExportContext
 ): Promise<void> => {
   // 创建新工作簿
   const workbook = new ExcelJS.Workbook();
@@ -1429,7 +1548,7 @@ const exportToExcelBrowser = async (
   
   // 为每个选中的sheet创建工作表
   selectedSheets.forEach(sheetData => {
-    createWorksheetFromSheetData(sheetData, options, workbook);
+    createWorksheetFromSheetData(sheetData, options, workbook, context.editedCellMap?.get(sheetData.name));
   });
   
   // 生成Excel文件

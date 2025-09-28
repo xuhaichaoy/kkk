@@ -17,7 +17,9 @@ import {
   mergeSheets,
   exportToExcel,
   ExportOptions,
-  generateUniqueSheetName
+  generateUniqueSheetName,
+  prepareSheetForExport,
+  ExportContext
 } from '../../utils/excelUtils';
 
 interface ExcelViewerProps {
@@ -185,16 +187,40 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
 
   const handleConfirmExport = useCallback(async (selectedSheets: SheetData[], options: ExportOptions) => {
     try {
-      const sourceIds = Array.from(new Set(selectedSheets.map(sheet => sheet.sourceFileId).filter(Boolean))) as string[];
+      const sheetIndexMap = new Map<string, number>();
+      sheets.forEach((sheet, index) => {
+        sheetIndexMap.set(sheet.name, index);
+      });
+
+      const preparedResults = selectedSheets.map(sheet => {
+        const sheetIndex = sheetIndexMap.get(sheet.name) ?? -1;
+        return prepareSheetForExport(sheet, sheetIndex, editedRows);
+      });
+
+      const preparedSheets = preparedResults.map(result => result.sheet);
+      const editedCellMap = new Map<string, Set<string>>();
+      preparedResults.forEach(result => {
+        if (result.editedCells && result.editedCells.size > 0) {
+          editedCellMap.set(result.sheet.name, result.editedCells);
+        }
+      });
+
+      const context: ExportContext = {};
+      if (editedCellMap.size > 0) {
+        context.editedCellMap = editedCellMap;
+      }
+
+      const sourceIds = Array.from(new Set(preparedSheets.map(sheet => sheet.sourceFileId).filter(Boolean))) as string[];
       const singleSourceId = sourceIds.length === 1 ? sourceIds[0] : undefined;
       const originalBuffer = singleSourceId ? fileBuffers[singleSourceId] : undefined;
-      await exportToExcel(selectedSheets, { ...options, originalBuffer });
+
+      await exportToExcel(preparedSheets, { ...options, originalBuffer }, context);
       setExportDialogOpen(false);
     } catch (err) {
       console.error('导出Excel失败:', err);
       setError(err instanceof Error ? err.message : '导出失败');
     }
-  }, [fileBuffers]);
+  }, [sheets, editedRows, fileBuffers]);
 
   useEffect(() => {
     isMountedRef.current = true;
