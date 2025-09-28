@@ -36,8 +36,9 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [fileBuffers, setFileBuffers] = useState<Record<string, ArrayBuffer>>({});
-  const [processedFileIds, setProcessedFileIds] = useState<string[]>([]);
+  const processedFileIdsRef = useRef<Set<string>>(new Set());
   const processingFileIds = useRef<Set<string>>(new Set());
+  const isMountedRef = useRef(true);
 
   // 初始化编辑数据，从本地存储加载
   const [editedRows, setEditedRows] = useState<EditedRowData>(() => {
@@ -195,6 +196,13 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
     }
   }, [fileBuffers]);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const processExcel = useCallback((file: File): Promise<void> => {
     const fileId = getFileId(file);
     return new Promise(async (resolve, reject) => {
@@ -217,9 +225,13 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
           if (type === 'SUCCESS') {
             const parsedSheets = data.sheets || data;
             if (!parsedSheets || parsedSheets.length === 0) {
-              setError('文件解析成功但没有找到工作表数据。请检查文件是否为有效的Excel文件。');
+              if (isMountedRef.current) {
+                setError('文件解析成功但没有找到工作表数据。请检查文件是否为有效的Excel文件。');
+              }
             } else {
-              setError(null);
+              if (isMountedRef.current) {
+                setError(null);
+              }
               setSheets(prev => {
                 const accumulated: SheetData[] = [];
                 const nextSheets = parsedSheets.map((sheet: any, index: number) => {
@@ -249,11 +261,13 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
                 return merged;
               });
               const idToStore = responseFileId || fileId;
-              setProcessedFileIds(prev => (prev.includes(idToStore) ? prev : [...prev, idToStore]));
+              processedFileIdsRef.current.add(idToStore);
             }
           } else if (type === 'ERROR') {
             console.error('Excel parsing error:', error);
-            setError(error);
+            if (isMountedRef.current) {
+              setError(error);
+            }
           }
           worker.terminate();
           resolve();
@@ -262,11 +276,15 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
         worker.onerror = (event) => {
           console.error('Excel worker error:', event.message);
           worker.terminate();
-          setError(event.message || '解析Excel时出错');
+          if (isMountedRef.current) {
+            setError(event.message || '解析Excel时出错');
+          }
           reject(new Error(event.message));
         };
       } catch (err) {
-        setError(err instanceof Error ? err.message : '处理Excel文件时出错');
+        if (isMountedRef.current) {
+          setError(err instanceof Error ? err.message : '处理Excel文件时出错');
+        }
         reject(err as Error);
       }
     });
@@ -275,25 +293,34 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
   useEffect(() => {
     if (!files || files.length === 0) {
       setSheets([]);
-      setProcessedFileIds([]);
+      processedFileIdsRef.current.clear();
       setFileBuffers({});
       setEditedRows(loadEditedData(STORAGE_KEY));
       setCurrentSheet(0);
-      setError(null);
-      setLoading(false);
+      if (isMountedRef.current) {
+        setError(null);
+        setLoading(false);
+      }
       return;
     }
 
     const pendingFiles = files.filter(file => {
       const id = getFileId(file);
-      return !processedFileIds.includes(id) && !processingFileIds.current.has(id);
+      return !processedFileIdsRef.current.has(id) && !processingFileIds.current.has(id);
     });
+
+    if (pendingFiles.length === 0) {
+      if (isMountedRef.current && processingFileIds.current.size === 0) {
+        setLoading(false);
+      }
+      return;
+    }
 
     let cancelled = false;
 
     (async () => {
-      setError(null);
-      if (pendingFiles.length > 0) {
+      if (isMountedRef.current) {
+        setError(null);
         setLoading(true);
       }
       try {
@@ -309,17 +336,14 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
             }
           } finally {
             processingFileIds.current.delete(fileId);
+            if (isMountedRef.current && processingFileIds.current.size === 0) {
+              setLoading(false);
+            }
           }
         }
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled && isMountedRef.current) {
           setError(err instanceof Error ? err.message : '处理Excel文件时出错');
-        }
-      } finally {
-        if (!cancelled) {
-          if (pendingFiles.length > 0) {
-            setLoading(false);
-          }
         }
       }
     })();
@@ -327,18 +351,19 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
     return () => {
       cancelled = true;
     };
-  }, [files, processedFileIds, processExcel]);
+  }, [files, processExcel]);
 
   const handleSheetChange = (_event: React.SyntheticEvent, newValue: number) => {
     setCurrentSheet(newValue);
   };
 
-  if (loading) {
-    return <LoadingSpinner message="正在处理Excel文件..." />;
-  }
-
+  // 优先显示错误，避免被加载态遮挡
   if (error) {
     return <ErrorAlert error={error} title="错误" />;
+  }
+  
+  if (loading) {
+    return <LoadingSpinner message="正在处理Excel文件..." />;
   }
 
   if (!sheets.length) {

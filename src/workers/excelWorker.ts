@@ -251,6 +251,27 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
         }
       });
       
+      // 自动筛选范围
+      if ((worksheet as any).autoFilter) {
+        const filter = (worksheet as any).autoFilter;
+        if (typeof filter === 'string') {
+          properties.autoFilter = filter;
+        } else if (filter && typeof filter === 'object') {
+          properties.autoFilter = {
+            ...filter,
+            from: filter.from ? { ...filter.from } : undefined,
+            to: filter.to ? { ...filter.to } : undefined
+          };
+        }
+      }
+
+      if (!properties.autoFilter && columnCount > 0 && rowCount > 0) {
+        properties.autoFilter = {
+          from: { row: 1, column: 1 },
+          to: { row: rowCount, column: columnCount }
+        };
+      }
+
       // 合并单元格
       if (worksheet.model && worksheet.model.merges) {
         properties.merges = worksheet.model.merges.map((merge: any) => ({
@@ -277,7 +298,8 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
       formulas: formulas,
       richTextRuns,
         properties: properties,
-        originalWorkbook: workbook, // 保存原始workbook引用
+        // 注意：不要把 workbook 跨线程传回主线程（会导致结构化克隆失败/方法丢失）
+        originalWorkbook: undefined,
         sourceFileId: undefined
     });
 
@@ -294,9 +316,11 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
       } catch (_) {}
   }
 
+  // 仅在 worker 内部保留完整 workbook 引用；
+  // 发送到主线程的数据不包含 workbook，以避免 DataCloneError 和性能问题。
   return {
     sheets: sheets,
-    workbook: workbook // 保留完整的workbook对象
+    workbook: workbook
   };
     
   } catch (error) {
@@ -332,7 +356,12 @@ self.addEventListener('message', async (e: MessageEvent<WorkerMessage>) => {
           });
         }
       } catch (_) {}
-      self.postMessage({ type: 'SUCCESS', data: excelWorkbook, fileId: e.data.fileId });
+      // 仅发送可序列化的最小数据集（不包含 workbook 和任何函数/循环引用）
+      const serializableSheets = (excelWorkbook as any).sheets.map((s: any) => ({
+        ...s,
+        originalWorkbook: undefined
+      }));
+      self.postMessage({ type: 'SUCCESS', data: { sheets: serializableSheets }, fileId: e.data.fileId });
     } catch (error) {
       self.postMessage({ type: 'ERROR', error: error instanceof Error ? error.message : 'Unknown error', fileId: e.data.fileId });
     }

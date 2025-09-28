@@ -273,7 +273,13 @@ export const splitTableByColumn = (
       });
       newProperties.merges = merges;
     }
-    
+
+    // 重新应用表头筛选范围
+    newProperties.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: filteredRows.length + 1, column: headers.length }
+    };
+
     return {
       name: uniqueName,
       originalName: uniqueName,
@@ -920,6 +926,27 @@ const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: Export
           copiedWorksheet.mergeCells(merge.top, merge.left, merge.bottom, merge.right);
         });
       }
+
+      // 复制筛选设置
+      if ((originalWorksheet as any).autoFilter) {
+        const originalFilter = (originalWorksheet as any).autoFilter;
+        copiedWorksheet.autoFilter = typeof originalFilter === 'string'
+          ? originalFilter
+          : {
+              ...originalFilter,
+              from: originalFilter.from ? { ...originalFilter.from } : undefined,
+              to: originalFilter.to ? { ...originalFilter.to } : undefined
+            };
+      } else if (sheetData.properties?.autoFilter) {
+        const autoFilter = sheetData.properties.autoFilter;
+        copiedWorksheet.autoFilter = typeof autoFilter === 'string'
+          ? autoFilter
+          : {
+              ...autoFilter,
+              from: autoFilter.from ? { ...autoFilter.from } : undefined,
+              to: autoFilter.to ? { ...autoFilter.to } : undefined
+            };
+      }
       
       // 复制保护设置
       if ((originalWorksheet as any).protection) {
@@ -1187,7 +1214,7 @@ const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOpti
         } catch (_) {}
       }
     });
-    } else {
+  } else {
     // 默认列宽设置
     const colWidths = sheetData.data[0]?.map((header, index) => {
       const maxLength = Math.max(
@@ -1217,7 +1244,28 @@ const createWorksheetFromSheetData = (sheetData: SheetData, _options: ExportOpti
       worksheet.mergeCells(merge.top, merge.left, merge.bottom, merge.right);
     });
   }
-  
+
+  // 设置表头筛选
+  const totalRows = sheetData.data?.length || sheetData.totalRows || 0;
+  const totalCols = sheetData.data?.[0]?.length || sheetData.totalCols || 0;
+  const applyAutoFilter = sheetData.properties?.autoFilter;
+  if (totalRows > 0 && totalCols > 0) {
+    if (applyAutoFilter) {
+      worksheet.autoFilter = typeof applyAutoFilter === 'string'
+        ? applyAutoFilter
+        : {
+            ...applyAutoFilter,
+            from: applyAutoFilter.from ? { ...applyAutoFilter.from } : undefined,
+            to: applyAutoFilter.to ? { ...applyAutoFilter.to } : undefined
+          };
+    } else {
+      worksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: totalRows, column: totalCols }
+      } as any;
+    }
+  }
+
   return worksheet;
 };
 
