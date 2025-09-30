@@ -41,6 +41,8 @@ const StyledTabs = styled(Tabs)(() => ({
     fontWeight: 500,
     minHeight: 48,
     color: 'text.secondary',
+    maxWidth: 'none',
+    minWidth: 'auto',
     '&.Mui-selected': {
       color: 'primary.main',
       fontWeight: 600,
@@ -95,8 +97,27 @@ const CustomTabs: React.FC<CustomTabsProps> = ({
             <Tab 
               key={index}
               label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography component="span" sx={{ fontWeight: 'inherit' }}>
+                <Box
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    maxWidth: 260,
+                    flexShrink: 1,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                >
+                  <Typography
+                    component="span"
+                    sx={{
+                      fontWeight: 'inherit',
+                      whiteSpace: 'inherit',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}
+                  >
                     {tab.label}
                   </Typography>
                   {tab.badge && (
@@ -109,7 +130,8 @@ const CustomTabs: React.FC<CustomTabsProps> = ({
                         px: 1,
                         py: 0.5,
                         borderRadius: 1,
-                        fontWeight: 500
+                        fontWeight: 500,
+                        whiteSpace: 'nowrap'
                       }}
                     >
                       {tab.badge}

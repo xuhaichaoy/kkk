@@ -2,9 +2,12 @@ import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { 
   Box, 
   Typography, 
-  Tooltip
+  Tooltip,
+  IconButton
 } from '@mui/material';
-import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog, CompareSheetsDialog, ExportSheetsDialog } from '../common';
+import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog, CompareSheetsDialog, ExportSheetsDialog, RenameSheetDialog, type CreateMergedSheetPayload } from '../common';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { 
   SheetData, 
   EditedRowData,
@@ -19,7 +22,8 @@ import {
   ExportOptions,
   generateUniqueSheetName,
   prepareSheetForExport,
-  ExportContext
+  ExportContext,
+  createComparisonMergeSheet
 } from '../../utils/excelUtils';
 
 interface ExcelViewerProps {
@@ -37,6 +41,8 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameTargetIndex, setRenameTargetIndex] = useState<number | null>(null);
   const [fileBuffers, setFileBuffers] = useState<Record<string, ArrayBuffer>>({});
   const processedFileIdsRef = useRef<Set<string>>(new Set());
   const processingFileIds = useRef<Set<string>>(new Set());
@@ -221,6 +227,113 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
       setError(err instanceof Error ? err.message : '导出失败');
     }
   }, [sheets, editedRows, fileBuffers]);
+
+  const handleOpenRenameDialog = useCallback(() => {
+    if (!sheets.length) return;
+    const safeIndex = Math.min(currentSheet, sheets.length - 1);
+    if (!sheets[safeIndex]) return;
+    setRenameTargetIndex(safeIndex);
+    setRenameDialogOpen(true);
+  }, [sheets, currentSheet]);
+
+  const handleCloseRenameDialog = useCallback(() => {
+    setRenameDialogOpen(false);
+    setRenameTargetIndex(null);
+  }, []);
+
+  const handleRenameSheet = useCallback((newName: string) => {
+    setSheets(prev => {
+      if (renameTargetIndex === null || !prev[renameTargetIndex]) {
+        return prev;
+      }
+      const updated = [...prev];
+      updated[renameTargetIndex] = {
+        ...prev[renameTargetIndex],
+        name: newName
+      };
+      return updated;
+    });
+    setRenameDialogOpen(false);
+    setRenameTargetIndex(null);
+  }, [renameTargetIndex]);
+
+  const handleDeleteCurrentSheet = useCallback(() => {
+    if (sheets.length === 0) {
+      return;
+    }
+    const targetIndex = Math.min(currentSheet, sheets.length - 1);
+    const targetSheet = sheets[targetIndex];
+    const confirmed = window.confirm(`确认删除工作表 "${targetSheet?.name ?? ''}" 吗？此操作不可撤销。`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSheets(prev => prev.filter((_, index) => index !== targetIndex));
+
+    setEditedRows(prev => {
+      const next: EditedRowData = {};
+      Object.entries(prev).forEach(([key, value]) => {
+        const [sheetIndexStr, rowIndexStr] = key.split('_');
+        const sheetIndex = Number(sheetIndexStr);
+        if (Number.isNaN(sheetIndex)) {
+          return;
+        }
+        if (sheetIndex === targetIndex) {
+          return;
+        }
+        const newSheetIndex = sheetIndex > targetIndex ? sheetIndex - 1 : sheetIndex;
+        next[`${newSheetIndex}_${rowIndexStr}`] = value;
+      });
+      saveEditedData(STORAGE_KEY, next);
+      return next;
+    });
+
+    setCurrentSheet(prevIndex => {
+      if (prevIndex > targetIndex) {
+        return prevIndex - 1;
+      }
+      if (prevIndex === targetIndex) {
+        return Math.max(0, prevIndex - 1);
+      }
+      return prevIndex;
+    });
+
+    if (renameDialogOpen) {
+      setRenameDialogOpen(false);
+      setRenameTargetIndex(null);
+    }
+  }, [sheets, currentSheet, renameDialogOpen]);
+
+  const handleCreateMergedSheetFromComparison = useCallback((payload: CreateMergedSheetPayload) => {
+    let createdIndex = -1;
+    setSheets(prev => {
+      const firstSheet = prev[payload.firstSheetIndex];
+      const secondSheet = prev[payload.secondSheetIndex];
+      if (!firstSheet || !secondSheet) {
+        return prev;
+      }
+      const uniqueName = generateUniqueSheetName(payload.options.sheetName, prev);
+      const mergedSheet = createComparisonMergeSheet(firstSheet, secondSheet, payload.comparisonResult, {
+        ...payload.options,
+        sheetName: uniqueName,
+        firstSourceLabel: firstSheet.name,
+        secondSourceLabel: secondSheet.name
+      });
+      const sheetToAdd: SheetData = {
+        ...mergedSheet,
+        name: uniqueName,
+        originalName: mergedSheet.originalName ?? uniqueName
+      };
+      const next = [...prev, sheetToAdd];
+      createdIndex = next.length - 1;
+      return next;
+    });
+
+    if (createdIndex >= 0) {
+      setCurrentSheet(createdIndex);
+      setCompareDialogOpen(false);
+    }
+  }, [generateUniqueSheetName, createComparisonMergeSheet]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -551,6 +664,38 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
         tabs={tabs}
         value={currentSheet}
         onChange={handleSheetChange}
+        actions={(
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Tooltip title="重命名当前工作表" arrow>
+              <span style={{ display: 'inline-flex' }}>
+                <IconButton
+                  size="small"
+                  onClick={handleOpenRenameDialog}
+                  disabled={sheets.length === 0}
+                  sx={{
+                    color: (theme) => sheets.length === 0 ? theme.palette.action.disabled : theme.palette.text.primary
+                  }}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="删除当前工作表" arrow>
+              <span style={{ display: 'inline-flex' }}>
+                <IconButton
+                  size="small"
+                  onClick={handleDeleteCurrentSheet}
+                  disabled={sheets.length === 0}
+                  sx={{
+                    color: (theme) => sheets.length === 0 ? theme.palette.action.disabled : theme.palette.error.main
+                  }}
+                >
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+        )}
       />
       
       <SplitTableDialog
@@ -574,6 +719,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
         onClose={handleCloseCompareDialog}
         sheets={sheets}
         editedRows={editedRows}
+        onCreateMergedSheet={handleCreateMergedSheetFromComparison}
       />
       
       <ExportSheetsDialog
@@ -581,6 +727,14 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
         onClose={handleCloseExportDialog}
         onConfirm={handleConfirmExport}
         sheets={sheets}
+      />
+
+      <RenameSheetDialog
+        open={renameDialogOpen}
+        onClose={handleCloseRenameDialog}
+        onConfirm={handleRenameSheet}
+        currentName={renameTargetIndex !== null && sheets[renameTargetIndex] ? sheets[renameTargetIndex].name : ''}
+        existingNames={sheets.map(sheet => sheet.name)}
       />
     </Box>
   );

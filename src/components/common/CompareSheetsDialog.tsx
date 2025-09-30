@@ -23,27 +23,46 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper
+  Paper,
+  TextField,
+  FormControlLabel,
+  Checkbox
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { SheetData, compareSheets, ComparisonResult, formatCellValue } from '../../utils/excelUtils';
+import { SheetData, compareSheets, ComparisonResult, formatCellValue, ComparisonMergeSheetOptions } from '../../utils/excelUtils';
+
+export interface CreateMergedSheetPayload {
+  firstSheetIndex: number;
+  secondSheetIndex: number;
+  comparisonResult: ComparisonResult;
+  options: ComparisonMergeSheetOptions;
+}
 
 interface CompareSheetsDialogProps {
   open: boolean;
   onClose: () => void;
   sheets: SheetData[];
   editedRows: { [key: string]: { [key: string]: any } };
+  onCreateMergedSheet?: (payload: CreateMergedSheetPayload) => void;
 }
 
 const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
   open,
   onClose,
   sheets,
-  editedRows
+  editedRows,
+  onCreateMergedSheet
 }) => {
   const [firstSheetIndex, setFirstSheetIndex] = useState<number>(0);
   const [secondSheetIndex, setSecondSheetIndex] = useState<number>(1);
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
+  const [mergeSheetName, setMergeSheetName] = useState<string>('差异合并结果');
+  const [mergeSheetNameError, setMergeSheetNameError] = useState<string>('');
+  const [mergeOptionsError, setMergeOptionsError] = useState<string>('');
+  const [includeUniqueFromFirst, setIncludeUniqueFromFirst] = useState<boolean>(true);
+  const [includeUniqueFromSecond, setIncludeUniqueFromSecond] = useState<boolean>(true);
+  const [includeModifiedRows, setIncludeModifiedRows] = useState<boolean>(true);
+  const [highlightChanges, setHighlightChanges] = useState<boolean>(true);
 
   // 执行对比
   const performComparison = useCallback(() => {
@@ -71,13 +90,100 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
     }
   }, [firstSheetIndex, secondSheetIndex, open, performComparison]);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const firstName = sheets[firstSheetIndex]?.name || 'Sheet1';
+    const secondName = sheets[secondSheetIndex]?.name || 'Sheet2';
+    setMergeSheetName(`${firstName}_${secondName}_差异合并`);
+    setMergeSheetNameError('');
+    setMergeOptionsError('');
+    setIncludeUniqueFromFirst(true);
+    setIncludeUniqueFromSecond(true);
+    setIncludeModifiedRows(true);
+    setHighlightChanges(true);
+  }, [open, sheets, firstSheetIndex, secondSheetIndex]);
+
   // 关闭对话框时重置状态
   const handleClose = useCallback(() => {
     setFirstSheetIndex(0);
     setSecondSheetIndex(1);
     setComparisonResult(null);
+    setMergeSheetName('差异合并结果');
+    setMergeSheetNameError('');
+    setMergeOptionsError('');
+    setIncludeUniqueFromFirst(true);
+    setIncludeUniqueFromSecond(true);
+    setIncludeModifiedRows(true);
+    setHighlightChanges(true);
     onClose();
   }, [onClose]);
+
+  const mergeOptionsSelected = includeUniqueFromFirst || includeUniqueFromSecond || includeModifiedRows;
+
+  const handleMergeSheetNameChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    setMergeSheetName(value);
+    if (mergeSheetNameError && value.trim()) {
+      setMergeSheetNameError('');
+    } else if (!value.trim()) {
+      setMergeSheetNameError('名称不能为空');
+    }
+  }, [mergeSheetNameError]);
+
+  const handleToggleIncludeUniqueFromFirst = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = event.target.checked;
+    setIncludeUniqueFromFirst(checked);
+    const nextSelected = checked || includeUniqueFromSecond || includeModifiedRows;
+    setMergeOptionsError(nextSelected ? '' : '请至少选择一种差异数据参与合并');
+  }, [includeUniqueFromSecond, includeModifiedRows]);
+
+  const handleToggleIncludeUniqueFromSecond = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = event.target.checked;
+    setIncludeUniqueFromSecond(checked);
+    const nextSelected = includeUniqueFromFirst || checked || includeModifiedRows;
+    setMergeOptionsError(nextSelected ? '' : '请至少选择一种差异数据参与合并');
+  }, [includeUniqueFromFirst, includeModifiedRows]);
+
+  const handleToggleIncludeModifiedRows = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = event.target.checked;
+    setIncludeModifiedRows(checked);
+    const nextSelected = includeUniqueFromFirst || includeUniqueFromSecond || checked;
+    setMergeOptionsError(nextSelected ? '' : '请至少选择一种差异数据参与合并');
+  }, [includeUniqueFromFirst, includeUniqueFromSecond]);
+
+  const handleToggleHighlightChanges = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setHighlightChanges(event.target.checked);
+  }, []);
+
+  const handleCreateMergedSheet = useCallback(() => {
+    if (!comparisonResult || !onCreateMergedSheet) {
+      return;
+    }
+    const trimmedName = mergeSheetName.trim();
+    if (!trimmedName) {
+      setMergeSheetNameError('名称不能为空');
+      return;
+    }
+    if (!mergeOptionsSelected) {
+      setMergeOptionsError('请至少选择一种差异数据参与合并');
+      return;
+    }
+
+    onCreateMergedSheet({
+      firstSheetIndex,
+      secondSheetIndex,
+      comparisonResult,
+      options: {
+        sheetName: trimmedName,
+        includeUniqueFromFirst,
+        includeUniqueFromSecond,
+        includeModifiedRows,
+        highlightChanges
+      }
+    });
+  }, [comparisonResult, onCreateMergedSheet, mergeSheetName, mergeOptionsSelected, firstSheetIndex, secondSheetIndex, includeUniqueFromFirst, includeUniqueFromSecond, includeModifiedRows, highlightChanges]);
 
   const canCompare = sheets.length >= 2 && firstSheetIndex !== secondSheetIndex;
 
@@ -335,6 +441,71 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                 </AccordionDetails>
               </Accordion>
             )}
+
+            {onCreateMergedSheet && (
+              <>
+                <Divider sx={{ my: 3 }} />
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <Typography variant="h6">
+                    高级合并
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    选择要合并的差异数据并生成新的对比结果工作表，可在导出前继续编辑。
+                  </Typography>
+                  <TextField
+                    label="新工作表名称"
+                    value={mergeSheetName}
+                    onChange={handleMergeSheetNameChange}
+                    fullWidth
+                    error={Boolean(mergeSheetNameError)}
+                    helperText={mergeSheetNameError || ' '}
+                  />
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={includeUniqueFromFirst}
+                          onChange={handleToggleIncludeUniqueFromFirst}
+                        />
+                      }
+                      label={`${sheets[firstSheetIndex]?.name || '工作表1'} 独有的行`}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={includeUniqueFromSecond}
+                          onChange={handleToggleIncludeUniqueFromSecond}
+                        />
+                      }
+                      label={`${sheets[secondSheetIndex]?.name || '工作表2'} 独有的行`}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={includeModifiedRows}
+                          onChange={handleToggleIncludeModifiedRows}
+                        />
+                      }
+                      label="包含修改过的行"
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={highlightChanges}
+                          onChange={handleToggleHighlightChanges}
+                        />
+                      }
+                      label="高亮差异单元格"
+                    />
+                  </Box>
+                  {mergeOptionsError && (
+                    <Typography variant="body2" color="error">
+                      {mergeOptionsError}
+                    </Typography>
+                  )}
+                </Box>
+              </>
+            )}
           </Box>
         )}
 
@@ -345,6 +516,15 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
         )}
       </DialogContent>
       <DialogActions>
+        {onCreateMergedSheet && comparisonResult && (
+          <Button
+            variant="contained"
+            onClick={handleCreateMergedSheet}
+            disabled={!canCompare || !mergeSheetName.trim() || !mergeOptionsSelected}
+          >
+            生成差异合并工作表
+          </Button>
+        )}
         <Button onClick={handleClose}>
           关闭
         </Button>
