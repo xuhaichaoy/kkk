@@ -13,6 +13,7 @@ export { default as SplitTableDialog } from './SplitTableDialog';
 export { default as MergeSheetsDialog } from './MergeSheetsDialog';
 export { default as CompareSheetsDialog } from './CompareSheetsDialog';
 export { default as ExportSheetsDialog } from './ExportSheetsDialog';
+export { default as RenameSheetDialog } from './RenameSheetDialog';
 
 // 类型定义
 export type { TabItem } from './CustomTabs';
@@ -20,3 +21,4 @@ export type { DataTableProps } from './DataTable';
 export type { FileInfoProps } from './FileInfo';
 export type { PageHeaderProps } from './PageHeader';
 export type { CardContainerProps } from './CardContainer';
+export type { CreateMergedSheetPayload } from './CompareSheetsDialog';

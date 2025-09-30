@@ -666,6 +666,16 @@ export interface ComparisonResult {
   };
 }
 
+export interface ComparisonMergeSheetOptions {
+  sheetName: string;
+  includeUniqueFromFirst: boolean;
+  includeUniqueFromSecond: boolean;
+  includeModifiedRows: boolean;
+  highlightChanges: boolean;
+  firstSourceLabel?: string;
+  secondSourceLabel?: string;
+}
+
 /**
  * 比较两个sheet的差异
  */
@@ -845,6 +855,185 @@ const findModifiedRows = (
       }
     }
   });
+};
+
+export const createComparisonMergeSheet = (
+  firstSheet: SheetData,
+  secondSheet: SheetData,
+  comparisonResult: ComparisonResult,
+  options: ComparisonMergeSheetOptions
+): SheetData => {
+  const {
+    sheetName,
+    includeUniqueFromFirst,
+    includeUniqueFromSecond,
+    includeModifiedRows,
+    highlightChanges,
+    firstSourceLabel,
+    secondSourceLabel
+  } = options;
+
+  const normalizeHeaders = (headers: any[]): string[] => {
+    return headers.map((header, index) => {
+      if (typeof header === 'string' && header.trim() !== '') {
+        return header;
+      }
+      if (header !== null && header !== undefined) {
+        const text = header.toString();
+        if (text.trim() !== '') {
+          return text;
+        }
+      }
+      return `列${index + 1}`;
+    });
+  };
+
+  const firstHeadersRaw = Array.isArray(firstSheet.data[0]) ? firstSheet.data[0] : [];
+  const secondHeadersRaw = Array.isArray(secondSheet.data[0]) ? secondSheet.data[0] : [];
+
+  const firstHeaders = normalizeHeaders(firstHeadersRaw);
+  const secondHeaders = normalizeHeaders(secondHeadersRaw);
+
+  const allColumns: string[] = [];
+  firstHeaders.forEach(header => {
+    if (!allColumns.includes(header)) {
+      allColumns.push(header);
+    }
+  });
+  secondHeaders.forEach(header => {
+    if (!allColumns.includes(header)) {
+      allColumns.push(header);
+    }
+  });
+
+  const headerRow = ['来源', ...allColumns];
+  const data: any[][] = [headerRow];
+  const styles: Record<string, any> = {};
+
+  const applyFill = (rowNumber: number, columnNumber: number, color: string) => {
+    const key = `${rowNumber}_${columnNumber}`;
+    styles[key] = {
+      ...(styles[key] || {}),
+      fill: {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: color }
+      }
+    };
+  };
+
+  const uniqueFirstColor = 'FFE3F2FD';
+  const uniqueSecondColor = 'FFF1F8E9';
+  const modifiedRowColor = 'FFFFFDE7';
+  const modifiedCellColor = 'FFFFF59D';
+
+  const firstLabel = firstSourceLabel || firstSheet.name || '工作表1';
+  const secondLabel = secondSourceLabel || secondSheet.name || '工作表2';
+  const modifiedLabel = `${firstLabel}→${secondLabel}`;
+
+  let currentRowNumber = 2;
+
+  const pushRow = (
+    sourceLabel: string,
+    valueMap: Record<string, any>,
+    fillColor?: string,
+    highlightedColumns?: Set<string>
+  ) => {
+    const rowValues = allColumns.map(column => valueMap[column] ?? '');
+    data.push([sourceLabel, ...rowValues]);
+
+    if (highlightChanges && fillColor) {
+      for (let col = 1; col <= headerRow.length; col++) {
+        applyFill(currentRowNumber, col, fillColor);
+      }
+    }
+
+    if (highlightChanges && highlightedColumns && highlightedColumns.size > 0) {
+      highlightedColumns.forEach(column => {
+        const columnIndex = allColumns.indexOf(column);
+        if (columnIndex !== -1) {
+          applyFill(currentRowNumber, columnIndex + 2, modifiedCellColor);
+        }
+      });
+    }
+
+    currentRowNumber += 1;
+  };
+
+  if (includeUniqueFromFirst && comparisonResult.dataDifferences.uniqueToFirst.length > 0) {
+    comparisonResult.dataDifferences.uniqueToFirst.forEach(row => {
+      const valueMap: Record<string, any> = {};
+      firstHeaders.forEach((header, index) => {
+        valueMap[header] = row[index] ?? '';
+      });
+      pushRow(firstLabel, valueMap, highlightChanges ? uniqueFirstColor : undefined);
+    });
+  }
+
+  if (includeUniqueFromSecond && comparisonResult.dataDifferences.uniqueToSecond.length > 0) {
+    comparisonResult.dataDifferences.uniqueToSecond.forEach(row => {
+      const valueMap: Record<string, any> = {};
+      secondHeaders.forEach((header, index) => {
+        valueMap[header] = row[index] ?? '';
+      });
+      pushRow(secondLabel, valueMap, highlightChanges ? uniqueSecondColor : undefined);
+    });
+  }
+
+  if (includeModifiedRows && comparisonResult.dataDifferences.modifiedRows.length > 0) {
+    comparisonResult.dataDifferences.modifiedRows.forEach(rowDiff => {
+      const valueMap: Record<string, any> = {};
+      const highlightedColumns = new Set<string>();
+
+      allColumns.forEach(column => {
+        const firstIndex = firstHeaders.indexOf(column);
+        const secondIndex = secondHeaders.indexOf(column);
+        const firstValue = firstIndex !== -1 ? rowDiff.firstRow[firstIndex] : undefined;
+        const secondValue = secondIndex !== -1 ? rowDiff.secondRow[secondIndex] : undefined;
+
+        if (firstIndex !== -1 && secondIndex !== -1) {
+          const firstText = formatCellValue(firstValue);
+          const secondText = formatCellValue(secondValue);
+          if (String(firstValue ?? '') === String(secondValue ?? '')) {
+            valueMap[column] = firstValue ?? secondValue ?? '';
+          } else {
+            valueMap[column] = `${firstText} → ${secondText}`;
+            highlightedColumns.add(column);
+          }
+        } else if (firstIndex !== -1) {
+          valueMap[column] = firstValue ?? '';
+        } else if (secondIndex !== -1) {
+          valueMap[column] = secondValue ?? '';
+        } else {
+          valueMap[column] = '';
+        }
+      });
+
+      pushRow(modifiedLabel, valueMap, highlightChanges ? modifiedRowColor : undefined, highlightedColumns);
+    });
+  }
+
+  const totalRows = Math.max(data.length - 1, 0);
+  const totalCols = headerRow.length;
+
+  const properties: any = {
+    rowCount: data.length,
+    columnCount: totalCols,
+    autoFilter: {
+      from: { row: 1, column: 1 },
+      to: { row: data.length, column: totalCols }
+    }
+  };
+
+  return {
+    name: sheetName,
+    originalName: sheetName,
+    data,
+    totalRows,
+    totalCols,
+    styles: Object.keys(styles).length > 0 ? styles : undefined,
+    properties
+  };
 };
 
 /**
