@@ -3,7 +3,11 @@ import {
   Box, 
   Typography, 
   Tooltip,
-  IconButton
+  IconButton,
+  Button,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup
 } from '@mui/material';
 import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog, CompareSheetsDialog, ExportSheetsDialog, RenameSheetDialog, type CreateMergedSheetPayload } from '../common';
 import EditIcon from '@mui/icons-material/Edit';
@@ -23,7 +27,13 @@ import {
   generateUniqueSheetName,
   prepareSheetForExport,
   ExportContext,
-  createComparisonMergeSheet
+  createComparisonMergeSheet,
+  getHeaderRow,
+  getHeaderRowIndex,
+  getDataRows,
+  getDataRowCount,
+  detectHeaderRowIndex,
+  DEFAULT_HEADER_ROW_INDEX
 } from '../../utils/excelUtils';
 
 interface ExcelViewerProps {
@@ -52,6 +62,215 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
   const [editedRows, setEditedRows] = useState<EditedRowData>(() => {
     return loadEditedData(STORAGE_KEY);
   });
+  const [manualHeaderInputs, setManualHeaderInputs] = useState<Record<number, string>>({});
+
+  const syncManualHeaderInput = useCallback((sheetIndex: number, headerIndex: number) => {
+    const display = String(headerIndex + 1);
+    setManualHeaderInputs(prev => {
+      if (prev[sheetIndex] === display) {
+        return prev;
+      }
+      return { ...prev, [sheetIndex]: display };
+    });
+  }, []);
+
+  const removeManualHeaderInput = useCallback((sheetIndex: number) => {
+    setManualHeaderInputs(prev => {
+      if (!(sheetIndex in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[sheetIndex];
+      return next;
+    });
+  }, []);
+
+  const clearEditsForSheet = useCallback((sheetIndex: number) => {
+    setEditedRows(prev => {
+      let changed = false;
+      const next: EditedRowData = {};
+      Object.entries(prev).forEach(([key, value]) => {
+        const [sheetIdxStr] = key.split('_');
+        if (Number(sheetIdxStr) === sheetIndex) {
+          changed = true;
+          return;
+        }
+        next[key] = value;
+      });
+      if (changed) {
+        saveEditedData(STORAGE_KEY, next);
+        return next;
+      }
+      return prev;
+    });
+  }, [saveEditedData]);
+
+  const applyHeaderRowUpdate = useCallback((sheetIndex: number, targetRowIndex: number, mode: 'auto' | 'manual') => {
+    const sheet = sheets[sheetIndex];
+    if (!sheet) {
+      return;
+    }
+
+    const rowCount = Array.isArray(sheet.data) ? sheet.data.length : 0;
+    const boundedIndex = rowCount > 0 ? Math.min(Math.max(targetRowIndex, 0), rowCount - 1) : DEFAULT_HEADER_ROW_INDEX;
+    const currentIndex = getHeaderRowIndex(sheet);
+    const indexChanged = boundedIndex !== currentIndex || sheet.headerRowIndex !== boundedIndex;
+    const modeChanged = sheet.headerDetectionMode !== mode;
+
+    if (!indexChanged && !modeChanged) {
+      if (mode === 'manual') {
+        syncManualHeaderInput(sheetIndex, boundedIndex);
+      } else {
+        removeManualHeaderInput(sheetIndex);
+      }
+      return;
+    }
+
+    const headerRow = rowCount > 0 ? (Array.isArray(sheet.data[boundedIndex]) ? sheet.data[boundedIndex] : []) : [];
+    const dataRows = rowCount > 0 ? sheet.data.slice(boundedIndex + 1) : [];
+    const maxCols = dataRows.reduce((max, row) => {
+      if (Array.isArray(row)) {
+        return Math.max(max, row.length);
+      }
+      return max;
+    }, Array.isArray(headerRow) ? headerRow.length : 0);
+
+    setSheets(prev => {
+      const next = [...prev];
+      const target = next[sheetIndex];
+      if (!target) {
+        return prev;
+      }
+
+      const updatedSheet: SheetData = {
+        ...target,
+        headerRowIndex: boundedIndex,
+        headerDetectionMode: mode,
+        totalCols: maxCols,
+        totalRows: rowCount > 0 ? Math.max(rowCount - boundedIndex - 1, 0) : 0
+      };
+
+      if (target.properties) {
+        const updatedProperties: any = { ...target.properties };
+        if (updatedProperties.autoFilter && typeof updatedProperties.autoFilter !== 'string') {
+          const nextFilter = { ...updatedProperties.autoFilter };
+          const headerRowNumber = boundedIndex + 1;
+          const lastRowNumber = Math.max(headerRowNumber, headerRowNumber + (updatedSheet.totalRows || 0));
+          const from = { ...(nextFilter.from || {}) };
+          const to = { ...(nextFilter.to || {}) };
+          from.row = headerRowNumber;
+          to.row = lastRowNumber;
+          nextFilter.from = from;
+          nextFilter.to = to;
+          updatedProperties.autoFilter = nextFilter;
+        }
+        updatedSheet.properties = updatedProperties;
+      }
+
+      next[sheetIndex] = updatedSheet;
+      return next;
+    });
+
+    if (mode === 'manual') {
+      syncManualHeaderInput(sheetIndex, boundedIndex);
+    } else {
+      removeManualHeaderInput(sheetIndex);
+    }
+
+    if (indexChanged) {
+      clearEditsForSheet(sheetIndex);
+    }
+  }, [sheets, setSheets, clearEditsForSheet, syncManualHeaderInput, removeManualHeaderInput]);
+
+  const handleHeaderModeChange = useCallback((sheetIndex: number, mode: 'auto' | 'manual') => {
+    const sheet = sheets[sheetIndex];
+    if (!sheet) {
+      return;
+    }
+
+    if (mode === 'auto') {
+      const autoIndex = detectHeaderRowIndex(sheet.data || []);
+      applyHeaderRowUpdate(sheetIndex, autoIndex, 'auto');
+    } else {
+      const currentIndex = getHeaderRowIndex(sheet);
+      applyHeaderRowUpdate(sheetIndex, currentIndex, 'manual');
+    }
+  }, [sheets, applyHeaderRowUpdate]);
+
+  const handleManualHeaderRowChange = useCallback((sheetIndex: number, inputValue: number) => {
+    const sheet = sheets[sheetIndex];
+    if (!sheet) {
+      return;
+    }
+
+    const rowCount = Array.isArray(sheet.data) ? sheet.data.length : 0;
+    if (rowCount === 0) {
+      return;
+    }
+
+    const rounded = Math.floor(inputValue);
+    if (Number.isNaN(rounded)) {
+      return;
+    }
+
+    const clamped = Math.min(Math.max(rounded, 1), rowCount);
+    applyHeaderRowUpdate(sheetIndex, clamped - 1, 'manual');
+  }, [sheets, applyHeaderRowUpdate]);
+
+  const handleManualHeaderInputChange = useCallback((sheetIndex: number, value: string) => {
+    setManualHeaderInputs(prev => ({ ...prev, [sheetIndex]: value }));
+  }, []);
+
+  const commitManualHeaderInput = useCallback((sheetIndex: number) => {
+    const sheet = sheets[sheetIndex];
+    if (!sheet || sheet.headerDetectionMode !== 'manual') {
+      return;
+    }
+
+    const rawValue = (manualHeaderInputs[sheetIndex] ?? '').trim();
+    if (rawValue === '') {
+      syncManualHeaderInput(sheetIndex, getHeaderRowIndex(sheet));
+      return;
+    }
+
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+      syncManualHeaderInput(sheetIndex, getHeaderRowIndex(sheet));
+      return;
+    }
+
+    handleManualHeaderRowChange(sheetIndex, parsed);
+  }, [sheets, manualHeaderInputs, handleManualHeaderRowChange, syncManualHeaderInput]);
+
+  useEffect(() => {
+    setManualHeaderInputs(prev => {
+      const next = { ...prev };
+      let changed = false;
+
+      sheets.forEach((sheet, index) => {
+        if (sheet.headerDetectionMode === 'manual') {
+          const desired = String(getHeaderRowIndex(sheet) + 1);
+          if (next[index] !== desired) {
+            next[index] = desired;
+            changed = true;
+          }
+        } else if (next[index] !== undefined) {
+          delete next[index];
+          changed = true;
+        }
+      });
+
+      Object.keys(next).forEach(key => {
+        const index = Number(key);
+        if (Number.isNaN(index) || index >= sheets.length) {
+          delete next[key];
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [sheets]);
 
   // 删除选中的行
   const handleDeleteRows = useCallback((selectedRowIndexes: number[]) => {
@@ -59,17 +278,18 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
 
     const newData = [...sheets];
     const currentSheetData = [...newData[currentSheet].data];
+    const headerIndex = getHeaderRowIndex(newData[currentSheet]);
     
     // 按照索引从大到小排序，这样删除时不会影响其他行的索引
     const sortedIndexes = selectedRowIndexes.sort((a, b) => b - a);
     
     // 删除选中的行（跳过表头）
     sortedIndexes.forEach(rowIndex => {
-      currentSheetData.splice(rowIndex + 1, 1);
+      currentSheetData.splice(headerIndex + 1 + rowIndex, 1);
     });
 
     newData[currentSheet].data = currentSheetData;
-    newData[currentSheet].totalRows = currentSheetData.length - 1; // 减去表头
+    newData[currentSheet].totalRows = Math.max(currentSheetData.length - headerIndex - 1, 0);
 
     setSheets(newData);
 
@@ -108,13 +328,15 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
       saveEditedData(STORAGE_KEY, newEditedRows);
       return newEditedRows;
     });
-  }, [sheets, currentSheet]);
+  }, [sheets, currentSheet, saveEditedData]);
 
   // 添加新行
   const handleAddRow = useCallback(() => {
     const newData = [...sheets];
     const currentSheetData = [...newData[currentSheet].data];
-    const columnCount = currentSheetData[0].length;
+    const headerIndex = getHeaderRowIndex(newData[currentSheet]);
+    const headerRow = currentSheetData[headerIndex] || currentSheetData[0] || [];
+    const columnCount = Array.isArray(headerRow) ? headerRow.length : 0;
     
     // 创建一个空行，列数与当前表格相同
     const newRow = new Array(columnCount).fill('');
@@ -123,7 +345,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
     currentSheetData.push(newRow);
 
     newData[currentSheet].data = currentSheetData;
-    newData[currentSheet].totalRows = currentSheetData.length - 1; // 减去表头
+    newData[currentSheet].totalRows = Math.max(currentSheetData.length - headerIndex - 1, 0);
 
     setSheets(newData);
   }, [sheets, currentSheet]);
@@ -534,126 +756,192 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
 
   // 准备标签页数据
   const tabs: TabItem[] = sheets.map((sheet, index) => {
-    
-    // 确保有数据行
-    const dataRows = sheet.data.length > 1 ? sheet.data.slice(1) : [];
-    const headers = sheet.data[0] || [];
-    
+    const headerIndex = getHeaderRowIndex(sheet);
+    const headers = getHeaderRow(sheet);
+    const dataRows = getDataRows(sheet);
+    const totalDataRows = getDataRowCount(sheet);
+
     return {
       label: sheet.name,
-      badge: `${sheet.totalRows}行`,
+      badge: `${totalDataRows}行`,
       content: (
-        <DataTable
-          rows={dataRows.map((row: any[], rowIndex: number) => {
-            const sheetId = `${index}_${rowIndex}`;
-            const editedRowData = editedRows[sheetId] || {};
-            
-            return {
-              id: rowIndex,
-              ...row.reduce((acc, cell, i) => ({ 
-                ...acc, 
-                [String(i)]: editedRowData[String(i)] || formatCellValue(cell)
-              }), {}),
-            };
-          })}
-          columns={headers.map((header: string, colIndex: number) => ({
-          field: String(colIndex),
-          headerName: header || `列 ${colIndex + 1}`,
-          minWidth: 120,
-          maxWidth: 300,
-          width: 180,
-          sortable: true,
-          filterable: true,
-          editable: true,
-          headerAlign: 'center',
-          align: 'center',
-          renderHeader: (params) => (
-            <Tooltip title={params.colDef.headerName} arrow>
-              <Box sx={{ 
-                width: '100%', 
-                textAlign: 'center',
-                fontWeight: 600,
-                whiteSpace: 'normal',
-                lineHeight: 1.4,
-                py: 1,
-                maxHeight: 100,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                display: '-webkit-box',
-                WebkitLineClamp: 4,
-                WebkitBoxOrient: 'vertical'
-              }}>
-                {params.colDef.headerName}
-              </Box>
-            </Tooltip>
-          ),
-          renderCell: (params) => {
-            const value = params.value?.toString() || '';
-            return (
-              <Tooltip 
-                title={value} 
-                arrow
-                placement="top"
-                enterDelay={100}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 1.5,
+              justifyContent: 'space-between',
+              px: { xs: 1, sm: 0 }
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                表头起始行
+              </Typography>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={sheet.headerDetectionMode || 'auto'}
+                onChange={(_, value: 'auto' | 'manual' | null) => {
+                  if (value) {
+                    handleHeaderModeChange(index, value);
+                  }
+                }}
               >
+                <ToggleButton value="auto">自动</ToggleButton>
+                <ToggleButton value="manual">手动</ToggleButton>
+              </ToggleButtonGroup>
+              {sheet.headerDetectionMode === 'manual' ? (
+                <TextField
+                  size="small"
+                  label="表头行号"
+                  value={manualHeaderInputs[index] ?? String(headerIndex + 1)}
+                  onChange={(event) => handleManualHeaderInputChange(index, event.target.value)}
+                  onBlur={() => commitManualHeaderInput(index)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      commitManualHeaderInput(index);
+                    }
+                  }}
+                  inputProps={{
+                    inputMode: 'numeric',
+                    pattern: '[0-9]*',
+                    min: 1,
+                    max: Math.max(sheet.data?.length || 1, 1)
+                  }}
+                />
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  自动检测：第 {headerIndex + 1} 行
+                </Typography>
+              )}
+            </Box>
+            {sheet.headerDetectionMode === 'manual' && (
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => handleHeaderModeChange(index, 'auto')}
+              >
+                重新自动检测
+              </Button>
+            )}
+          </Box>
+
+          <DataTable
+            rows={dataRows.map((row: any[], rowIndex: number) => {
+              const sheetId = `${index}_${rowIndex}`;
+              const editedRowData = editedRows[sheetId] || {};
+              
+              return {
+                id: rowIndex,
+                ...row.reduce((acc, cell, i) => ({ 
+                  ...acc, 
+                  [String(i)]: editedRowData[String(i)] || formatCellValue(cell)
+                }), {}),
+              };
+            })}
+            columns={headers.map((header: string, colIndex: number) => ({
+            field: String(colIndex),
+            headerName: header || `列 ${colIndex + 1}`,
+            minWidth: 120,
+            maxWidth: 300,
+            width: 180,
+            sortable: true,
+            filterable: true,
+            editable: true,
+            headerAlign: 'center',
+            align: 'center',
+            renderHeader: (params) => (
+              <Tooltip title={params.colDef.headerName} arrow>
                 <Box sx={{ 
-                  width: '100%',
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  px: 1,
-                  fontSize: '0.875rem',
+                  width: '100%', 
+                  textAlign: 'center',
+                  fontWeight: 600,
+                  whiteSpace: 'normal',
+                  lineHeight: 1.4,
+                  py: 1,
+                  maxHeight: 100,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  color: theme => value.length > 50 ? theme.palette.primary.main : 'inherit',
-                  '&:hover': {
-                    color: theme => value.length > 50 ? theme.palette.primary.dark : 'inherit',
-                  }
+                  display: '-webkit-box',
+                  WebkitLineClamp: 4,
+                  WebkitBoxOrient: 'vertical'
                 }}>
-                  {value}
+                  {params.colDef.headerName}
                 </Box>
               </Tooltip>
-            );
-          },
-          }))}
-          enableSelection={true}
-          enableAdd={true}
-          enableDelete={true}
-          enableExport={true}
-          enableSplit={true}
-          enableMerge={sheets.length >= 2}
-          enableCompare={sheets.length >= 2}
-          enableExportExcel={sheets.length > 0}
-          onAdd={handleAddRow}
-          onDelete={handleDeleteRows}
-          onSplit={handleSplitTable}
-          onMerge={handleMergeSheets}
-          onCompare={handleCompareSheets}
-          onExportExcel={handleExportExcel}
-          onRowUpdate={(updatedRow, originalRow) => {
-            const sheetId = `${index}_${updatedRow.id}`;
-                  const changedField = Object.keys(updatedRow).find(
-                    key => updatedRow[key] !== originalRow[key]
-                  );
-                  
-                  if (changedField) {
-                    setEditedRows(prev => {
-                      const newData = {
-                        ...prev,
-                        [sheetId]: {
-                          ...(prev[sheetId] || {}),
-                          [changedField]: updatedRow[changedField],
-                        },
-                      };
-                      saveEditedData(STORAGE_KEY, newData);
-                      return newData;
-                    });
-                  }
-                  return updatedRow;
-                }}
-          height="70vh"
-        />
+            ),
+            renderCell: (params) => {
+              const value = params.value?.toString() || '';
+              return (
+                <Tooltip 
+                  title={value} 
+                  arrow
+                  placement="top"
+                  enterDelay={100}
+                >
+                  <Box sx={{ 
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    px: 1,
+                    fontSize: '0.875rem',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    color: theme => value.length > 50 ? theme.palette.primary.main : 'inherit',
+                    '&:hover': {
+                      color: theme => value.length > 50 ? theme.palette.primary.dark : 'inherit',
+                    }
+                  }}>
+                    {value}
+                  </Box>
+                </Tooltip>
+              );
+            },
+            }))}
+            enableSelection={true}
+            enableAdd={true}
+            enableDelete={true}
+            enableExport={true}
+            enableSplit={true}
+            enableMerge={sheets.length >= 2}
+            enableCompare={sheets.length >= 2}
+            enableExportExcel={sheets.length > 0}
+            onAdd={handleAddRow}
+            onDelete={handleDeleteRows}
+            onSplit={handleSplitTable}
+            onMerge={handleMergeSheets}
+            onCompare={handleCompareSheets}
+            onExportExcel={handleExportExcel}
+            onRowUpdate={(updatedRow, originalRow) => {
+              const sheetId = `${index}_${updatedRow.id}`;
+                    const changedField = Object.keys(updatedRow).find(
+                      key => updatedRow[key] !== originalRow[key]
+                    );
+                    
+                    if (changedField) {
+                      setEditedRows(prev => {
+                        const newData = {
+                          ...prev,
+                          [sheetId]: {
+                            ...(prev[sheetId] || {}),
+                            [changedField]: updatedRow[changedField],
+                          },
+                        };
+                        saveEditedData(STORAGE_KEY, newData);
+                        return newData;
+                      });
+                    }
+                    return updatedRow;
+                  }}
+            height="70vh"
+          />
+        </Box>
       )
     };
   });

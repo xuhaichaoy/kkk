@@ -13,7 +13,7 @@ import {
   Box,
   Typography
 } from '@mui/material';
-import { SheetData, getColumnUniqueValues } from '../../utils/excelUtils';
+import { SheetData, getColumnUniqueValues, getDataRows, getHeaderRow } from '../../utils/excelUtils';
 
 interface SplitTableDialogProps {
   open: boolean;
@@ -39,12 +39,15 @@ const SplitTableDialog: React.FC<SplitTableDialogProps> = ({
   const handleColumnChange = useCallback((columnField: string) => {
     setSelectedColumnField(columnField);
     
-    if (columnField && sheetData?.data.length > 1) {
+    if (columnField && sheetData) {
       const columnIndex = parseInt(columnField);
-      const dataRows = sheetData.data.slice(1);
-      
-      const uniqueValues = getColumnUniqueValues(dataRows, columnIndex, currentSheet, editedRows);
-      setColumnUniqueValues(uniqueValues);
+      const dataRows = getDataRows(sheetData);
+      if (Number.isInteger(columnIndex) && dataRows.length > 0) {
+        const uniqueValues = getColumnUniqueValues(dataRows, columnIndex, currentSheet, editedRows);
+        setColumnUniqueValues(uniqueValues);
+      } else {
+        setColumnUniqueValues([]);
+      }
     } else {
       setColumnUniqueValues([]);
     }
@@ -72,6 +75,8 @@ const SplitTableDialog: React.FC<SplitTableDialogProps> = ({
     }
   }, [open]);
 
+  const headers = sheetData ? getHeaderRow(sheetData) : [];
+
   return (
     <Dialog
       open={open}
@@ -92,7 +97,7 @@ const SplitTableDialog: React.FC<SplitTableDialogProps> = ({
             onChange={(e) => handleColumnChange(e.target.value)}
             label="选择列"
           >
-            {sheetData?.data[0]?.map((header: string, index: number) => (
+            {headers.map((header: string, index: number) => (
               <MenuItem key={index} value={String(index)}>
                 {header || `列 ${index + 1}`}
               </MenuItem>
