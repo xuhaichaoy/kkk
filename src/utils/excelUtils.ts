@@ -9,6 +9,8 @@ export interface SheetData {
   data: any[][];
   totalRows: number;
   totalCols: number;
+  headerRowIndex?: number; // 表头所在的行（0-based）
+  headerDetectionMode?: 'auto' | 'manual';
   styles?: any; // 原始样式信息
   formulas?: any; // 原始公式信息
   // 富文本 runs（按单元格地址，如 "1_1"），用于保留局部颜色/加粗等
@@ -17,11 +19,206 @@ export interface SheetData {
   originalWorkbook?: any; // 原始workbook对象引用
   sourceFileId?: string; // 来源文件标识，用于多文件管理
   originalName?: string; // 原始sheet名称（用于去重）
+  internalId?: string; // 内部唯一标识（用于流式解析组装）
 }
 
 export interface EditedRowData {
   [key: string]: { [key: string]: any };
 }
+
+export const DEFAULT_HEADER_ROW_INDEX = 0;
+
+const columnLettersToNumber = (letters: string): number => {
+  let result = 0;
+  const upper = letters.toUpperCase();
+  for (let i = 0; i < upper.length; i++) {
+    const code = upper.charCodeAt(i);
+    if (code < 65 || code > 90) {
+      return NaN;
+    }
+    result = result * 26 + (code - 64);
+  }
+  return result;
+};
+
+const parseCellAddress = (address: string | undefined | null): { row: number; column: number } | null => {
+  if (!address) {
+    return null;
+  }
+  const match = String(address).match(/^([A-Za-z]+)(\d+)$/);
+  if (!match) {
+    return null;
+  }
+  const column = columnLettersToNumber(match[1]);
+  const row = parseInt(match[2], 10);
+  if (!Number.isFinite(column) || Number.isNaN(row)) {
+    return null;
+  }
+  return { row, column };
+};
+
+const normalizeMergeRange = (merge: any): { top: number; left: number; bottom: number; right: number } | null => {
+  if (!merge) {
+    return null;
+  }
+
+  if (typeof merge === 'string') {
+    const [start, end] = merge.split(':');
+    const startCell = parseCellAddress(start);
+    const endCell = parseCellAddress(end || start);
+    if (!startCell || !endCell) {
+      return null;
+    }
+    return {
+      top: Math.min(startCell.row, endCell.row),
+      bottom: Math.max(startCell.row, endCell.row),
+      left: Math.min(startCell.column, endCell.column),
+      right: Math.max(startCell.column, endCell.column)
+    };
+  }
+
+  if (typeof merge === 'object') {
+    if (
+      typeof merge.top === 'number' &&
+      typeof merge.left === 'number' &&
+      typeof merge.bottom === 'number' &&
+      typeof merge.right === 'number'
+    ) {
+      return {
+        top: merge.top,
+        left: merge.left,
+        bottom: merge.bottom,
+        right: merge.right
+      };
+    }
+
+    const topLeft = parseCellAddress(merge.tl || merge.topLeft);
+    const bottomRight = parseCellAddress(merge.br || merge.bottomRight);
+    if (topLeft && bottomRight) {
+      return {
+        top: Math.min(topLeft.row, bottomRight.row),
+        bottom: Math.max(topLeft.row, bottomRight.row),
+        left: Math.min(topLeft.column, bottomRight.column),
+        right: Math.max(topLeft.column, bottomRight.column)
+      };
+    }
+  }
+
+  return null;
+};
+
+export const detectHeaderRowIndex = (rows: any[][]): number => {
+  if (!Array.isArray(rows)) {
+    return DEFAULT_HEADER_ROW_INDEX;
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!Array.isArray(row)) {
+      continue;
+    }
+
+    const hasValue = row.some(cell => {
+      if (cell === null || cell === undefined) {
+        return false;
+      }
+      if (typeof cell === 'string') {
+        return cell.trim() !== '';
+      }
+      if (typeof cell === 'number') {
+        return true;
+      }
+      if (typeof cell === 'boolean') {
+        return true;
+      }
+      if (cell instanceof Date) {
+        return true;
+      }
+      if (typeof cell === 'object') {
+        try {
+          if ('richText' in cell && Array.isArray((cell as any).richText)) {
+            return (cell as any).richText.some((rt: any) => {
+              if (!rt) return false;
+              if (typeof rt.text === 'string') {
+                return rt.text.trim() !== '';
+              }
+              if (rt.text !== null && rt.text !== undefined) {
+                return String(rt.text).trim() !== '';
+              }
+              return false;
+            });
+          }
+          if ('text' in cell && typeof (cell as any).text === 'string') {
+            return (cell as any).text.trim() !== '';
+          }
+          if ('result' in cell) {
+            const result = (cell as any).result;
+            if (result === null || result === undefined) {
+              return false;
+            }
+            return typeof result === 'string' ? result.trim() !== '' : true;
+          }
+        } catch (_) {
+          // ignore structured detection errors
+        }
+        const text = String(cell);
+        return text.trim() !== '' && text !== '[object Object]';
+      }
+      const text = String(cell);
+      return text.trim() !== '';
+    });
+
+    if (hasValue) {
+      return i;
+    }
+  }
+
+  return DEFAULT_HEADER_ROW_INDEX;
+};
+
+export const getHeaderRowIndex = (sheet: SheetData): number => {
+  const candidate = typeof sheet.headerRowIndex === 'number' ? sheet.headerRowIndex : DEFAULT_HEADER_ROW_INDEX;
+  if (!Array.isArray(sheet.data) || sheet.data.length === 0) {
+    return DEFAULT_HEADER_ROW_INDEX;
+  }
+  if (candidate < 0) {
+    return DEFAULT_HEADER_ROW_INDEX;
+  }
+  if (candidate >= sheet.data.length) {
+    return Math.max(sheet.data.length - 1, DEFAULT_HEADER_ROW_INDEX);
+  }
+  return candidate;
+};
+
+export const getHeaderRow = (sheet: SheetData): any[] => {
+  const headerIndex = getHeaderRowIndex(sheet);
+  const row = sheet.data?.[headerIndex];
+  return Array.isArray(row) ? row : [];
+};
+
+export const getDataRows = (sheet: SheetData): any[][] => {
+  const headerIndex = getHeaderRowIndex(sheet);
+  if (!Array.isArray(sheet.data)) {
+    return [];
+  }
+  return sheet.data.slice(headerIndex + 1);
+};
+
+export const getDataRowCount = (sheet: SheetData): number => {
+  if (!Array.isArray(sheet.data) || sheet.data.length === 0) {
+    return 0;
+  }
+  const headerIndex = getHeaderRowIndex(sheet);
+  if (headerIndex >= sheet.data.length - 1) {
+    return 0;
+  }
+  return sheet.data.length - headerIndex - 1;
+};
+
+export const getExcelRowNumberForDataIndex = (sheet: SheetData, dataRowIndex: number): number => {
+  const headerIndex = getHeaderRowIndex(sheet);
+  return headerIndex + dataRowIndex + 2;
+};
 
 /**
  * 生成文件唯一标识
@@ -128,7 +325,8 @@ export const prepareSheetForExport = (
     return { sheet };
   }
 
-  const dataRows = sheet.data.slice(1);
+  const headerIndex = getHeaderRowIndex(sheet);
+  const dataRows = Array.isArray(sheet.data) ? sheet.data.slice(headerIndex + 1) : [];
   let hasEdits = false;
   const editedCells = new Set<string>();
 
@@ -140,7 +338,8 @@ export const prepareSheetForExport = (
       Object.keys(edits).forEach(colKey => {
         const colIndex = Number(colKey);
         if (!Number.isNaN(colIndex)) {
-          editedCells.add(`${rowIdx + 2}_${colIndex + 1}`);
+          const excelRowNumber = getExcelRowNumberForDataIndex(sheet, rowIdx);
+          editedCells.add(`${excelRowNumber}_${colIndex + 1}`);
         }
       });
     }
@@ -151,16 +350,21 @@ export const prepareSheetForExport = (
     return { sheet };
   }
 
-  const originalHeader = sheet.data[0];
-  const headerRow = Array.isArray(originalHeader) ? [...originalHeader] : [];
-  const updatedData = [headerRow, ...updatedRows];
-  const maxCols = updatedRows.reduce((max, row) => Math.max(max, row.length), headerRow.length);
+  const sourceData = Array.isArray(sheet.data) ? sheet.data : [];
+  const prefixRows = headerIndex > 0
+    ? sourceData.slice(0, headerIndex).map(row => (Array.isArray(row) ? [...row] : []))
+    : [];
+  const headerSourceRow = sourceData[headerIndex];
+  const headerRow = Array.isArray(headerSourceRow) ? [...headerSourceRow] : [];
+  const updatedData = [...prefixRows, headerRow, ...updatedRows];
+  const maxCols = updatedData.reduce((max, row) => (Array.isArray(row) ? Math.max(max, row.length) : max), 0);
 
   const updatedSheet: SheetData = {
     ...sheet,
     data: updatedData,
     totalRows: updatedRows.length,
-    totalCols: maxCols
+    totalCols: maxCols,
+    headerRowIndex: headerIndex
   };
 
   return {
@@ -213,8 +417,9 @@ export const splitTableByColumn = (
   editedRows: EditedRowData,
   existingSheets: SheetData[]
 ): SheetData[] => {
-  const headers = sheetData.data[0];
-  const dataRows = sheetData.data.slice(1);
+  const headerIndex = getHeaderRowIndex(sheetData);
+  const headers = getHeaderRow(sheetData);
+  const dataRows = getDataRows(sheetData);
   const rowsWithEdits = getRowsWithEdits(dataRows, currentSheet, editedRows);
   
   const uniqueValues = getColumnUniqueValues(dataRows, columnIndex, currentSheet, editedRows);
@@ -235,7 +440,7 @@ export const splitTableByColumn = (
     // 行号映射：原始行(1-based) -> 新行(1-based)
     const rowMap: Record<number, number> = { 1: 1 };
     matchingRowIndices.forEach((dataRowIdx, i) => {
-      const oldRow = dataRowIdx + 2; // 原始数据行的 1-based 行号（跳过表头）
+      const oldRow = getExcelRowNumberForDataIndex(sheetData, dataRowIdx);
       const newRow = i + 2; // 新表中的 1-based 行号
       rowMap[oldRow] = newRow;
     });
@@ -345,6 +550,8 @@ export const splitTableByColumn = (
       data: [headers, ...filteredRows],
       totalRows: filteredRows.length,
       totalCols: headers.length,
+      headerRowIndex: 0,
+      headerDetectionMode: 'manual',
       styles: newStyles,
       formulas: newFormulas,
       richTextRuns: newRichTextRuns,
@@ -376,14 +583,14 @@ export const analyzeSheetsForMerge = (sheets: SheetData[]): MergeAnalysis => {
   }
 
   // 获取第一个sheet的列作为基准
-  const baseColumns = sheets[0].data[0] || [];
+  const baseColumns = getHeaderRow(sheets[0]);
   const baseColumnSet = new Set(baseColumns);
   const allColumnsSet = new Set(baseColumns);
   const sheetColumnMapping: { [sheetName: string]: string[] } = {};
 
   // 收集所有sheet的列信息
   sheets.forEach(sheet => {
-    const sheetColumns = sheet.data[0] || [];
+    const sheetColumns = getHeaderRow(sheet);
     sheetColumnMapping[sheet.name] = sheetColumns;
     sheetColumns.forEach(col => allColumnsSet.add(col));
   });
@@ -423,6 +630,7 @@ export const mergeSheets = (
   const mergedRichText: any = {};
   let currentRowIndex = 1; // 从第2行开始（第1行是表头）
   const mergedRowProps: any[] = [];
+  const mergedMerges: any[] = [];
 
   if (sheets[0].properties?.rows?.[0]) {
     mergedRowProps[0] = sheets[0].properties.rows[0];
@@ -430,8 +638,12 @@ export const mergeSheets = (
 
   // 合并每个sheet的数据
   sheets.forEach(sheet => {
-    const sheetHeaders = sheet.data[0] || [];
-    const sheetRows = sheet.data.slice(1);
+    const sheetHeaders = getHeaderRow(sheet);
+    const sheetRows = getDataRows(sheet);
+    const headerRowNumber = getHeaderRowIndex(sheet) + 1;
+    const sheetRowIndexMap: Record<number, number> = {
+      [headerRowNumber]: 1
+    };
 
     // 为每一行数据创建完整的行
     sheetRows.forEach((row, rowIdx) => {
@@ -448,7 +660,9 @@ export const mergeSheets = (
       mergedData.push(mergedRow);
       
       // 处理样式/公式/富文本信息（该行）
-      const originalRowIndex = rowIdx + 2; // 原始行号（+2因为表头占第1行）
+      const originalRowIndex = getExcelRowNumberForDataIndex(sheet, rowIdx);
+      const newRowNumber = currentRowIndex + 1;
+      sheetRowIndexMap[originalRowIndex] = newRowNumber;
 
       const originalRowProps = sheet.properties?.rows?.[originalRowIndex - 1];
       if (originalRowProps) {
@@ -466,7 +680,7 @@ export const mergeSheets = (
             if (header) {
               const targetColIndex = allColumns.indexOf(header);
               if (targetColIndex !== -1) {
-                const newCellKey = `${currentRowIndex + 1}_${targetColIndex + 1}`;
+                const newCellKey = `${newRowNumber}_${targetColIndex + 1}`;
                 mergedStyles[newCellKey] = sheet.styles![cellKey];
               }
             }
@@ -485,7 +699,6 @@ export const mergeSheets = (
             if (header) {
               const targetColIndex = allColumns.indexOf(header);
               if (targetColIndex !== -1) {
-                const newRowNumber = currentRowIndex + 1;
                 const newKey = `${newRowNumber}_${targetColIndex + 1}`;
                 const rowOffset = newRowNumber - originalRow;
                 mergedFormulas[newKey] = adjustFormulaRowReferences(sheet.formulas![cellKey], rowOffset);
@@ -506,7 +719,7 @@ export const mergeSheets = (
             if (header) {
               const targetColIndex = allColumns.indexOf(header);
               if (targetColIndex !== -1) {
-                const newKey = `${currentRowIndex + 1}_${targetColIndex + 1}`;
+                const newKey = `${newRowNumber}_${targetColIndex + 1}`;
                 mergedRichText[newKey] = sheet.richTextRuns![cellKey];
               }
             }
@@ -516,17 +729,104 @@ export const mergeSheets = (
       
       currentRowIndex++;
     });
+
+    const sheetMerges = sheet.properties?.merges;
+    if (Array.isArray(sheetMerges)) {
+      sheetMerges.forEach(merge => {
+        if (!merge || typeof merge !== 'object') {
+          return;
+        }
+        if (merge.bottom <= headerRowNumber) {
+          // 表头合并在后续统一处理
+          return;
+        }
+
+        const mappedRows: number[] = [];
+        for (let r = merge.top; r <= merge.bottom; r++) {
+          const mapped = sheetRowIndexMap[r];
+          if (!mapped) {
+            mappedRows.length = 0;
+            break;
+          }
+          mappedRows.push(mapped);
+        }
+        if (mappedRows.length === 0) {
+          return;
+        }
+        mappedRows.sort((a, b) => a - b);
+        let rowsContiguous = true;
+        for (let i = 1; i < mappedRows.length; i++) {
+          if (mappedRows[i] !== mappedRows[i - 1] + 1) {
+            rowsContiguous = false;
+            break;
+          }
+        }
+        if (!rowsContiguous) {
+          return;
+        }
+
+        const mappedCols: number[] = [];
+        for (let c = merge.left; c <= merge.right; c++) {
+          const header = sheetHeaders[c - 1];
+          if (!header) {
+            mappedCols.length = 0;
+            break;
+          }
+          const targetColIndex = allColumns.indexOf(header);
+          if (targetColIndex === -1) {
+            mappedCols.length = 0;
+            break;
+          }
+          mappedCols.push(targetColIndex + 1);
+        }
+
+        if (mappedCols.length === 0) {
+          return;
+        }
+        mappedCols.sort((a, b) => a - b);
+        let colsContiguous = true;
+        for (let i = 1; i < mappedCols.length; i++) {
+          if (mappedCols[i] !== mappedCols[i - 1] + 1) {
+            colsContiguous = false;
+            break;
+          }
+        }
+        if (!colsContiguous) {
+          return;
+        }
+
+        const newMerge = {
+          top: mappedRows[0],
+          bottom: mappedRows[mappedRows.length - 1],
+          left: mappedCols[0],
+          right: mappedCols[mappedCols.length - 1]
+        };
+
+        const exists = mergedMerges.some(item =>
+          item.top === newMerge.top &&
+          item.bottom === newMerge.bottom &&
+          item.left === newMerge.left &&
+          item.right === newMerge.right
+        );
+
+        if (!exists) {
+          mergedMerges.push(newMerge);
+        }
+      });
+    }
   });
 
   // 处理表头样式：遍历所有 sheet，确保每个列头都能找到样式
   sheets.forEach(sheet => {
     if (!sheet.styles) return;
+    const headerRowNumber = getHeaderRowIndex(sheet) + 1;
+    const headerRow = getHeaderRow(sheet);
     Object.keys(sheet.styles).forEach(cellKey => {
       const [rowStr, colStr] = cellKey.split('_');
       const rowIndex = parseInt(rowStr, 10);
       const colIndex = parseInt(colStr, 10);
-      if (rowIndex === 1) {
-        const header = sheet.data[0]?.[colIndex - 1];
+      if (rowIndex === headerRowNumber) {
+        const header = headerRow[colIndex - 1];
         if (!header) return;
         const targetColIndex = allColumns.indexOf(header);
         if (targetColIndex !== -1) {
@@ -541,12 +841,14 @@ export const mergeSheets = (
 
   sheets.forEach(sheet => {
     if (!sheet.richTextRuns) return;
+    const headerRowNumber = getHeaderRowIndex(sheet) + 1;
+    const headerRow = getHeaderRow(sheet);
     Object.keys(sheet.richTextRuns).forEach(cellKey => {
       const [rowStr, colStr] = cellKey.split('_');
       const rowIndex = parseInt(rowStr, 10);
       const colIndex = parseInt(colStr, 10);
-      if (rowIndex === 1) {
-        const header = sheet.data[0]?.[colIndex - 1];
+      if (rowIndex === headerRowNumber) {
+        const header = headerRow[colIndex - 1];
         if (!header) return;
         const targetColIndex = allColumns.indexOf(header);
         if (targetColIndex !== -1) {
@@ -570,10 +872,23 @@ export const mergeSheets = (
     data: mergedData,
     totalRows: mergedData.length - 1,
     totalCols: allColumns.length,
+    headerRowIndex: 0,
+    headerDetectionMode: 'manual',
     styles: mergedStyles,
     formulas: mergedFormulas,
     richTextRuns: mergedRichText,
-    properties: buildMergedProperties(sheets, allColumns, mergedRowProps),
+    properties: (() => {
+      const props = buildMergedProperties(sheets, allColumns, mergedRowProps, mergedMerges) || {};
+      props.rowCount = mergedData.length;
+      props.columnCount = allColumns.length;
+      if (!props.autoFilter) {
+        props.autoFilter = {
+          from: { row: 1, column: 1 },
+          to: { row: mergedData.length, column: allColumns.length }
+        };
+      }
+      return props;
+    })(),
     originalWorkbook: sheets[0].originalWorkbook, // 保留第一个sheet的原始workbook引用
     sourceFileId: mergedSourceId
   };
@@ -583,7 +898,7 @@ export const mergeSheets = (
  * 根据合并后的表头，构建合并后工作表属性（列宽/表头合并）
  * 行高等与数据行绑定的属性在合并后意义不大，保留默认值即可
  */
-const buildMergedProperties = (sheets: SheetData[], allColumns: string[], mergedRows: any[]) => {
+const buildMergedProperties = (sheets: SheetData[], allColumns: string[], mergedRows: any[], baseMerges: any[] = []) => {
   const first = sheets[0];
   const props: any = {};
 
@@ -591,7 +906,7 @@ const buildMergedProperties = (sheets: SheetData[], allColumns: string[], merged
   const columns: any[] = new Array(allColumns.length).fill(null);
   allColumns.forEach((name, i) => {
     for (const s of sheets) {
-      const headers = s.data[0] || [];
+      const headers = getHeaderRow(s);
       const idx = headers.indexOf(name);
       if (idx !== -1 && s.properties?.columns?.[idx]) {
         const col = s.properties.columns[idx];
@@ -604,10 +919,11 @@ const buildMergedProperties = (sheets: SheetData[], allColumns: string[], merged
 
   // 表头合并单元格映射（只处理第1行）
   const headerMerges: any[] = [];
-  const firstHeaders = first.data[0] || [];
+  const firstHeaders = getHeaderRow(first);
+  const headerRowNumber = getHeaderRowIndex(first) + 1;
   const firstMerges = first.properties?.merges || [];
   firstMerges.forEach((m: any) => {
-    if (m.top === 1 && m.bottom === 1) {
+    if (m.top === headerRowNumber && m.bottom === headerRowNumber) {
       // 将 left..right 的原列索引映射到合并后索引
       const mappedCols: number[] = [];
       for (let c = m.left; c <= m.right; c++) {
@@ -628,7 +944,11 @@ const buildMergedProperties = (sheets: SheetData[], allColumns: string[], merged
       }
     }
   });
-  if (headerMerges.length) props.merges = headerMerges;
+  const combinedMerges = [...baseMerges];
+  if (headerMerges.length) {
+    combinedMerges.push(...headerMerges);
+  }
+  if (combinedMerges.length) props.merges = combinedMerges;
 
   if (mergedRows && mergedRows.length) {
     props.rows = mergedRows;
@@ -686,12 +1006,12 @@ export const compareSheets = (
   secondSheetIndex: number,
   editedRows: EditedRowData
 ): ComparisonResult => {
-  const firstHeaders = firstSheet.data[0] || [];
-  const secondHeaders = secondSheet.data[0] || [];
+  const firstHeaders = getHeaderRow(firstSheet);
+  const secondHeaders = getHeaderRow(secondSheet);
   
   // 获取包含编辑数据的行
-  const firstRows = getRowsWithEdits(firstSheet.data.slice(1), firstSheetIndex, editedRows);
-  const secondRows = getRowsWithEdits(secondSheet.data.slice(1), secondSheetIndex, editedRows);
+  const firstRows = getRowsWithEdits(getDataRows(firstSheet), firstSheetIndex, editedRows);
+  const secondRows = getRowsWithEdits(getDataRows(secondSheet), secondSheetIndex, editedRows);
 
   // 分析表头差异
   const firstHeaderSet = new Set(firstHeaders);
@@ -888,8 +1208,8 @@ export const createComparisonMergeSheet = (
     });
   };
 
-  const firstHeadersRaw = Array.isArray(firstSheet.data[0]) ? firstSheet.data[0] : [];
-  const secondHeadersRaw = Array.isArray(secondSheet.data[0]) ? secondSheet.data[0] : [];
+  const firstHeadersRaw = getHeaderRow(firstSheet);
+  const secondHeadersRaw = getHeaderRow(secondSheet);
 
   const firstHeaders = normalizeHeaders(firstHeadersRaw);
   const secondHeaders = normalizeHeaders(secondHeadersRaw);
@@ -1031,6 +1351,8 @@ export const createComparisonMergeSheet = (
     data,
     totalRows,
     totalCols,
+    headerRowIndex: 0,
+    headerDetectionMode: 'manual',
     styles: Object.keys(styles).length > 0 ? styles : undefined,
     properties
   };
@@ -1040,9 +1362,11 @@ export const createComparisonMergeSheet = (
  * 导出表格数据为CSV
  */
 export const exportToCSV = (sheetData: SheetData): void => {
+  const headerRow = getHeaderRow(sheetData);
+  const dataRows = getDataRows(sheetData);
   const csvContent = [
-    sheetData.data[0].join(','), // 表头
-    ...sheetData.data.slice(1).map(row => 
+    headerRow.join(','),
+    ...dataRows.map(row =>
       row.map(cell => {
         const value = cell?.toString() || '';
         // 如果包含逗号、引号或换行符，需要用引号包围并转义
@@ -1074,6 +1398,7 @@ export interface ExportOptions {
   preserveFormulas: boolean;
   // 可选：导出时使用原始文件缓冲区重载workbook，最大化保留样式/公式
   originalBuffer?: ArrayBuffer;
+  sourceBuffers?: Record<string, ArrayBuffer>;
 }
 
 // 简单判断originalWorkbook是否可用（跨worker传递后对象方法会丢失）
@@ -1197,157 +1522,182 @@ const populateWorksheetData = (
   }
 };
 
-const createWorkbookFromOriginal = (selectedSheets: SheetData[], options: ExportOptions, context: ExportContext = {}): ExcelJS.Workbook => {
-  // 使用第一个sheet的原始workbook作为基础
-  const baseWorkbook = selectedSheets[0].originalWorkbook as ExcelJS.Workbook;
-  
-  // 创建新的workbook
-  const newWorkbook = new ExcelJS.Workbook();
-  
-  // 复制工作簿级别的属性
-  newWorkbook.creator = baseWorkbook.creator || 'Blink Excel Processor';
-  newWorkbook.lastModifiedBy = baseWorkbook.lastModifiedBy || 'Blink Excel Processor';
-  newWorkbook.created = baseWorkbook.created || new Date();
-  newWorkbook.modified = baseWorkbook.modified || new Date();
-  newWorkbook.company = baseWorkbook.company;
-  newWorkbook.title = baseWorkbook.title;
-  newWorkbook.subject = baseWorkbook.subject;
-  newWorkbook.keywords = baseWorkbook.keywords;
-  newWorkbook.description = baseWorkbook.description;
-  newWorkbook.category = baseWorkbook.category;
-  
-  // 为每个选中的sheet添加工作表
-  selectedSheets.forEach(sheetData => {
-    // 检查 baseWorkbook 是否有 getWorksheet 方法
-    let originalWorksheet;
-    if (typeof baseWorkbook.getWorksheet === 'function') {
-      originalWorksheet = baseWorkbook.getWorksheet(sheetData.name);
-    } else if (baseWorkbook.worksheets) {
-      // 如果 getWorksheet 方法不存在，尝试从 worksheets 数组中查找
-      originalWorksheet = baseWorkbook.worksheets.find(ws => ws.name === sheetData.name);
+const copyWorksheetFromOriginal = (
+  targetWorkbook: ExcelJS.Workbook,
+  sheetData: SheetData,
+  originalWorkbook: ExcelJS.Workbook,
+  options: ExportOptions,
+  editedCells?: Set<string>
+): boolean => {
+  const lookupNames = Array.from(new Set([sheetData.originalName, sheetData.name].filter(Boolean) as string[]));
+  let originalWorksheet: ExcelJS.Worksheet | undefined;
+  for (const name of lookupNames) {
+    const worksheet = originalWorkbook.getWorksheet(name);
+    if (worksheet) {
+      originalWorksheet = worksheet;
+      break;
     }
-    
-    if (originalWorksheet) {
-      // 日志：原始工作表是否具备必要方法
-      try {
-        console.log('[excelExport] using original worksheet copy:', {
-          name: sheetData.name,
-          hasEachRow: typeof (originalWorksheet as any).eachRow === 'function',
-          hasModel: !!(originalWorksheet as any).model,
-          colCount: (originalWorksheet as any).columnCount,
-          rowCount: (originalWorksheet as any).rowCount,
-        });
-      } catch (_) {}
-      // 深度复制原始工作表，保留所有格式
-      const copiedWorksheet = newWorkbook.addWorksheet(sheetData.name);
-      
-      // 复制工作表级别的属性
-      if (originalWorksheet.properties) {
-        copiedWorksheet.properties = { ...originalWorksheet.properties };
-      }
-      
-      // 复制列设置
-      if (originalWorksheet.columns && originalWorksheet.columns.length > 0) {
-        copiedWorksheet.columns = originalWorksheet.columns.map(col => ({
-          ...col,
-          style: col.style ? { ...col.style } : undefined
-        }));
-      }
-      
-      // 复制合并单元格
-      if (originalWorksheet.model && originalWorksheet.model.merges) {
-        originalWorksheet.model.merges.forEach((merge: any) => {
-          copiedWorksheet.mergeCells(merge.top, merge.left, merge.bottom, merge.right);
-        });
-      }
+  }
 
-      // 复制筛选设置
-      if ((originalWorksheet as any).autoFilter) {
-        const originalFilter = (originalWorksheet as any).autoFilter;
-        copiedWorksheet.autoFilter = typeof originalFilter === 'string'
-          ? originalFilter
-          : {
-              ...originalFilter,
-              from: originalFilter.from ? { ...originalFilter.from } : undefined,
-              to: originalFilter.to ? { ...originalFilter.to } : undefined
-            };
-      } else if (sheetData.properties?.autoFilter) {
-        const autoFilter = sheetData.properties.autoFilter;
-        copiedWorksheet.autoFilter = typeof autoFilter === 'string'
-          ? autoFilter
-          : {
-              ...autoFilter,
-              from: autoFilter.from ? { ...autoFilter.from } : undefined,
-              to: autoFilter.to ? { ...autoFilter.to } : undefined
-            };
-      }
-      
-      // 复制保护设置
-      if ((originalWorksheet as any).protection) {
-        (copiedWorksheet as any).protection = { ...(originalWorksheet as any).protection };
-      }
-      
-      // 复制单元格数据和样式
-      // 注意：row.eachCell 可能跳过“仅有样式但无值”的单元格（如空格子仅设置边框），
-      // 为了完整保留样式，这里按 sheetData 的行列范围做全矩阵遍历。
-      const rowsToCopy = Math.max(originalWorksheet.rowCount || 0, sheetData.totalRows || 0);
-      const colsToCopy = Math.max(originalWorksheet.columnCount || 0, sheetData.totalCols || 0);
-      let copiedFormulaCells = 0;
-      let copiedStyledCells = 0;
-      for (let rowNumber = 1; rowNumber <= rowsToCopy; rowNumber++) {
-        for (let colNumber = 1; colNumber <= colsToCopy; colNumber++) {
-          const cell = originalWorksheet.getCell(rowNumber, colNumber);
-          const newCell = copiedWorksheet.getCell(rowNumber, colNumber);
+  if (!originalWorksheet) {
+    return false;
+  }
 
-          // 复制值（含公式）
-          if (cell.value !== null && cell.value !== undefined) {
-            if (typeof cell.value === 'object' && 'result' in cell.value) {
-              newCell.value = {
-                formula: (cell.value as any).formula,
-                result: (cell.value as any).result,
-                sharedFormula: undefined
-              } as any;
-              copiedFormulaCells++;
-            } else {
-              newCell.value = cell.value as any;
-            }
-          } else {
-            // 强制“触发”空单元格的存在，方便应用样式
-            newCell.value = newCell.value ?? null;
-          }
+  const copiedWorksheet = targetWorkbook.addWorksheet(sheetData.name);
 
-          // 复制样式（包含仅样式的空单元格）
-          if (cell.style && Object.keys(cell.style).length > 0) {
-            // 边框颜色缺省时，Excel 默认是黑色；保持与原始一致：直接复制（exceljs会处理默认）
-            newCell.style = { ...cell.style } as any;
-            copiedStyledCells++;
-          }
-        }
-      }
-      
-      // 复制行高
-      originalWorksheet.eachRow((row, rowNumber) => {
-        if (row.height) {
-          copiedWorksheet.getRow(rowNumber).height = row.height;
-        }
-      });
-      populateWorksheetData(copiedWorksheet, sheetData, options, context.editedCellMap?.get(sheetData.name));
+  if (originalWorksheet.properties) {
+    copiedWorksheet.properties = { ...originalWorksheet.properties };
+  }
 
-      try {
-        console.log('[excelExport] copied sheet stats:', {
-          name: sheetData.name,
-          copiedFormulaCells,
-          copiedStyledCells,
-          merges: (originalWorksheet as any).model?.merges?.length || 0,
-        });
-      } catch (_) {}
+  if (originalWorksheet.columns && originalWorksheet.columns.length > 0) {
+    copiedWorksheet.columns = originalWorksheet.columns.map(col => ({
+      ...col,
+      style: col.style ? { ...col.style } : undefined
+    }));
+  }
+
+  const mergeRanges = new Set<string>();
+  const applyMerge = (merge: any) => {
+    const normalized = normalizeMergeRange(merge);
+    if (!normalized) {
+      return;
+    }
+    const key = `${normalized.top}:${normalized.left}:${normalized.bottom}:${normalized.right}`;
+    if (mergeRanges.has(key)) {
+      return;
+    }
+    mergeRanges.add(key);
+    copiedWorksheet.mergeCells(normalized.top, normalized.left, normalized.bottom, normalized.right);
+  };
+
+  const mergeCollections: any[] = [];
+  const model: any = originalWorksheet.model || {};
+  if (model.mergeCells) {
+    mergeCollections.push(model.mergeCells);
+  }
+  if (model.merges) {
+    mergeCollections.push(model.merges);
+  }
+  if ((originalWorksheet as any)._merges) {
+    mergeCollections.push((originalWorksheet as any)._merges);
+  }
+
+  mergeCollections.forEach(collection => {
+    if (!collection) {
+      return;
+    }
+    if (Array.isArray(collection)) {
+      collection.forEach(applyMerge);
+    } else if (typeof collection === 'object') {
+      Object.values(collection).forEach(applyMerge);
     } else {
-      // 如果没有原始工作表，则使用createWorksheetFromSheetData创建
-      try { console.warn(`[excelExport] original worksheet not found, fallback: ${sheetData.name}`); } catch (_) {}
-      createWorksheetFromSheetData(sheetData, options, newWorkbook, context.editedCellMap?.get(sheetData.name));
+      applyMerge(collection);
     }
   });
-  
+
+  const originalFilter = (originalWorksheet as any).autoFilter;
+  const fallbackFilter = sheetData.properties?.autoFilter;
+  if (originalFilter || fallbackFilter) {
+    const sourceFilter = originalFilter || fallbackFilter;
+    copiedWorksheet.autoFilter = typeof sourceFilter === 'string'
+      ? sourceFilter
+      : {
+          ...sourceFilter,
+          from: sourceFilter.from ? { ...sourceFilter.from } : undefined,
+          to: sourceFilter.to ? { ...sourceFilter.to } : undefined
+        };
+  }
+
+  if ((originalWorksheet as any).protection) {
+    (copiedWorksheet as any).protection = { ...(originalWorksheet as any).protection };
+  }
+
+  const rowsToCopy = Math.max(originalWorksheet.rowCount || 0, sheetData.totalRows || 0);
+  const colsToCopy = Math.max(originalWorksheet.columnCount || 0, sheetData.totalCols || 0);
+
+  for (let rowNumber = 1; rowNumber <= rowsToCopy; rowNumber++) {
+    for (let colNumber = 1; colNumber <= colsToCopy; colNumber++) {
+      const sourceCell = originalWorksheet.getCell(rowNumber, colNumber);
+      const targetCell = copiedWorksheet.getCell(rowNumber, colNumber);
+
+      if (sourceCell.value !== null && sourceCell.value !== undefined) {
+        if (typeof sourceCell.value === 'object' && 'result' in sourceCell.value) {
+          targetCell.value = {
+            formula: (sourceCell.value as any).formula,
+            result: (sourceCell.value as any).result,
+            sharedFormula: undefined
+          } as any;
+        } else if (typeof sourceCell.value === 'object' && 'richText' in sourceCell.value) {
+          const richTextValue = sourceCell.value as any;
+          targetCell.value = {
+            richText: Array.isArray(richTextValue.richText)
+              ? richTextValue.richText.map((rt: any) => ({
+                  text: rt.text,
+                  font: rt.font ? { ...rt.font } : undefined
+                }))
+              : richTextValue.richText
+          } as any;
+        } else {
+          targetCell.value = sourceCell.value as any;
+        }
+      } else {
+        targetCell.value = targetCell.value ?? null;
+      }
+
+      if (sourceCell.style && Object.keys(sourceCell.style).length > 0) {
+        targetCell.style = { ...(sourceCell.style as any) };
+      }
+    }
+  }
+
+  originalWorksheet.eachRow((row, rowNumber) => {
+    if (row.height) {
+      copiedWorksheet.getRow(rowNumber).height = row.height;
+    }
+  });
+
+  populateWorksheetData(copiedWorksheet, sheetData, options, editedCells);
+
+  return true;
+};
+
+const createWorkbookFromOriginal = (
+  selectedSheets: SheetData[],
+  options: ExportOptions,
+  context: ExportContext = {}
+): ExcelJS.Workbook => {
+  const newWorkbook = new ExcelJS.Workbook();
+
+  const firstWithOriginal = selectedSheets.find(sheet => sheet.originalWorkbook && canUseOriginalWorkbook(sheet.originalWorkbook));
+  if (firstWithOriginal && firstWithOriginal.originalWorkbook) {
+    const baseWorkbook = firstWithOriginal.originalWorkbook as ExcelJS.Workbook;
+    newWorkbook.creator = baseWorkbook.creator || 'Blink Excel Processor';
+    newWorkbook.lastModifiedBy = baseWorkbook.lastModifiedBy || 'Blink Excel Processor';
+    newWorkbook.created = baseWorkbook.created || new Date();
+    newWorkbook.modified = baseWorkbook.modified || new Date();
+    newWorkbook.company = baseWorkbook.company;
+    newWorkbook.title = baseWorkbook.title;
+    newWorkbook.subject = baseWorkbook.subject;
+    newWorkbook.keywords = baseWorkbook.keywords;
+    newWorkbook.description = baseWorkbook.description;
+    newWorkbook.category = baseWorkbook.category;
+  } else {
+    newWorkbook.creator = 'Blink Excel Processor';
+    newWorkbook.lastModifiedBy = 'Blink Excel Processor';
+    newWorkbook.created = new Date();
+    newWorkbook.modified = new Date();
+  }
+
+  selectedSheets.forEach(sheetData => {
+    const editedCells = context.editedCellMap?.get(sheetData.name);
+    const canUseOriginal = sheetData.originalWorkbook && canUseOriginalWorkbook(sheetData.originalWorkbook);
+    if (canUseOriginal && copyWorksheetFromOriginal(newWorkbook, sheetData, sheetData.originalWorkbook as ExcelJS.Workbook, options, editedCells)) {
+      return;
+    }
+
+    createWorksheetFromSheetData(sheetData, options, newWorkbook, editedCells);
+  });
+
   return newWorkbook;
 };
 
@@ -1521,14 +1871,21 @@ const createWorksheetFromSheetData = (
     });
   } else {
     // 默认列宽设置
-    const colWidths = sheetData.data[0]?.map((header, index) => {
+    const headerRow = getHeaderRow(sheetData);
+    const dataRows = getDataRows(sheetData);
+    const columnCount = Math.max(
+      headerRow.length,
+      ...dataRows.map(row => (Array.isArray(row) ? row.length : 0))
+    );
+    const colWidths = Array.from({ length: columnCount }, (_, index) => {
+      const header = headerRow[index] ?? '';
       const maxLength = Math.max(
         String(header).length,
-        ...sheetData.data.slice(1).map(row => String(row[index] || '').length)
+        ...dataRows.map(row => String(row[index] ?? '').length)
       );
       return Math.min(Math.max(maxLength, 10), 50);
-    }) || [];
-    
+    });
+
     colWidths.forEach((width, index) => {
       worksheet.getColumn(index + 1).width = width;
     });
@@ -1545,16 +1902,28 @@ const createWorksheetFromSheetData = (
   
   // 设置合并单元格
   if (sheetData.properties && sheetData.properties.merges) {
+    const mergeKeys = new Set<string>();
     sheetData.properties.merges.forEach((merge: any) => {
-      worksheet.mergeCells(merge.top, merge.left, merge.bottom, merge.right);
+      const normalized = normalizeMergeRange(merge);
+      if (!normalized) {
+        return;
+      }
+      const key = `${normalized.top}:${normalized.left}:${normalized.bottom}:${normalized.right}`;
+      if (mergeKeys.has(key)) {
+        return;
+      }
+      mergeKeys.add(key);
+      worksheet.mergeCells(normalized.top, normalized.left, normalized.bottom, normalized.right);
     });
   }
 
   // 设置表头筛选
-  const totalRows = sheetData.data?.length || sheetData.totalRows || 0;
-  const totalCols = sheetData.data?.[0]?.length || sheetData.totalCols || 0;
+  const headerIndex = getHeaderRowIndex(sheetData);
+  const headerRowNumber = headerIndex + 1;
+  const totalCols = getHeaderRow(sheetData).length || sheetData.totalCols || 0;
+  const dataRowCount = getDataRowCount(sheetData);
   const applyAutoFilter = sheetData.properties?.autoFilter;
-  if (totalRows > 0 && totalCols > 0) {
+  if (totalCols > 0) {
     if (applyAutoFilter) {
       worksheet.autoFilter = typeof applyAutoFilter === 'string'
         ? applyAutoFilter
@@ -1564,9 +1933,10 @@ const createWorksheetFromSheetData = (
             to: applyAutoFilter.to ? { ...applyAutoFilter.to } : undefined
           };
     } else {
+      const lastRowNumber = Math.max(headerRowNumber, headerRowNumber + dataRowCount);
       worksheet.autoFilter = {
-        from: { row: 1, column: 1 },
-        to: { row: totalRows, column: totalCols }
+        from: { row: headerRowNumber, column: 1 },
+        to: { row: lastRowNumber, column: totalCols }
       } as any;
     }
   }

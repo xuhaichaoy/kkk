@@ -29,7 +29,7 @@ import {
   Checkbox
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { SheetData, compareSheets, ComparisonResult, formatCellValue, ComparisonMergeSheetOptions } from '../../utils/excelUtils';
+import { SheetData, compareSheets, ComparisonResult, formatCellValue, ComparisonMergeSheetOptions, getHeaderRow } from '../../utils/excelUtils';
 
 export interface CreateMergedSheetPayload {
   firstSheetIndex: number;
@@ -186,6 +186,10 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
   }, [comparisonResult, onCreateMergedSheet, mergeSheetName, mergeOptionsSelected, firstSheetIndex, secondSheetIndex, includeUniqueFromFirst, includeUniqueFromSecond, includeModifiedRows, highlightChanges]);
 
   const canCompare = sheets.length >= 2 && firstSheetIndex !== secondSheetIndex;
+  const firstHeaderSheet = sheets[firstSheetIndex];
+  const secondHeaderSheet = sheets[secondSheetIndex];
+  const firstHeaders = firstHeaderSheet ? getHeaderRow(firstHeaderSheet) : [];
+  const secondHeaders = secondHeaderSheet ? getHeaderRow(secondHeaderSheet) : [];
 
   return (
     <Dialog
@@ -313,7 +317,7 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          {sheets[firstSheetIndex]?.data[0]?.map((header, index) => (
+                          {firstHeaders.map((header, index) => (
                             <TableCell
                               key={index}
                               sx={{
@@ -366,7 +370,7 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          {sheets[secondSheetIndex]?.data[0]?.map((header, index) => (
+                          {secondHeaders.map((header, index) => (
                             <TableCell
                               key={index}
                               sx={{

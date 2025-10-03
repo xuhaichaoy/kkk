@@ -14,6 +14,8 @@ interface SheetData {
   data: any[][];
   totalRows: number;
   totalCols: number;
+  headerRowIndex?: number;
+  headerDetectionMode?: 'auto' | 'manual';
   styles?: any;
   formulas?: any;
   // 保存富文本 runs（按单元格地址，如 "1_1"）以便导出时能还原颜色/加粗等
@@ -28,6 +30,154 @@ interface ExcelWorkbook {
   sheets: SheetData[];
   workbook: any; // 完整的workbook对象，包含所有格式信息
 }
+
+const detectHeaderRowIndex = (rows: any[][]): number => {
+  if (!Array.isArray(rows)) {
+    return 0;
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!Array.isArray(row)) {
+      continue;
+    }
+
+    const hasValue = row.some(cell => {
+      if (cell === null || cell === undefined) {
+        return false;
+      }
+      if (typeof cell === 'string') {
+        return cell.trim() !== '';
+      }
+      if (typeof cell === 'number' || typeof cell === 'boolean') {
+        return true;
+      }
+      if (cell instanceof Date) {
+        return true;
+      }
+      const text = String(cell);
+      return text.trim() !== '' && text !== '[object Object]';
+    });
+
+    if (hasValue) {
+      return i;
+    }
+  }
+
+  return 0;
+};
+
+const columnLettersToNumber = (letters: string): number => {
+  let result = 0;
+  const upper = letters.toUpperCase();
+  for (let i = 0; i < upper.length; i++) {
+    const code = upper.charCodeAt(i);
+    if (code < 65 || code > 90) {
+      return NaN;
+    }
+    result = result * 26 + (code - 64);
+  }
+  return result;
+};
+
+const parseCellAddress = (address: string | undefined | null): { row: number; column: number } | null => {
+  if (!address) {
+    return null;
+  }
+  const match = String(address).match(/^([A-Za-z]+)(\d+)$/);
+  if (!match) {
+    return null;
+  }
+  const column = columnLettersToNumber(match[1]);
+  const row = parseInt(match[2], 10);
+  if (!Number.isFinite(column) || Number.isNaN(row)) {
+    return null;
+  }
+  return { row, column };
+};
+
+const normalizeMergeRange = (merge: any): { top: number; left: number; bottom: number; right: number } | null => {
+  if (!merge) {
+    return null;
+  }
+
+  if (typeof merge === 'string') {
+    const [start, end] = merge.split(':');
+    const startCell = parseCellAddress(start);
+    const endCell = parseCellAddress(end || start);
+    if (!startCell || !endCell) {
+      return null;
+    }
+    return {
+      top: Math.min(startCell.row, endCell.row),
+      bottom: Math.max(startCell.row, endCell.row),
+      left: Math.min(startCell.column, endCell.column),
+      right: Math.max(startCell.column, endCell.column)
+    };
+  }
+
+  if (typeof merge === 'object') {
+    if (
+      typeof merge.top === 'number' &&
+      typeof merge.left === 'number' &&
+      typeof merge.bottom === 'number' &&
+      typeof merge.right === 'number'
+    ) {
+      return {
+        top: merge.top,
+        left: merge.left,
+        bottom: merge.bottom,
+        right: merge.right
+      };
+    }
+
+    const topLeft = parseCellAddress(merge.tl || merge.topLeft);
+    const bottomRight = parseCellAddress(merge.br || merge.bottomRight);
+    if (topLeft && bottomRight) {
+      return {
+        top: Math.min(topLeft.row, bottomRight.row),
+        bottom: Math.max(topLeft.row, bottomRight.row),
+        left: Math.min(topLeft.column, bottomRight.column),
+        right: Math.max(topLeft.column, bottomRight.column)
+      };
+    }
+  }
+
+  return null;
+};
+
+const collectWorksheetMerges = (worksheet: ExcelJS.Worksheet): Array<{ top: number; left: number; bottom: number; right: number }> => {
+  const merges: Array<{ top: number; left: number; bottom: number; right: number }> = [];
+  const seen = new Set<string>();
+
+  const push = (merge: any) => {
+    const normalized = normalizeMergeRange(merge);
+    if (!normalized) {
+      return;
+    }
+    const key = `${normalized.top}:${normalized.left}:${normalized.bottom}:${normalized.right}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    merges.push(normalized);
+  };
+
+  const model: any = (worksheet as any).model || {};
+  const collections = [model.mergeCells, model.merges, (worksheet as any)._merges];
+  collections.forEach(collection => {
+    if (!collection) {
+      return;
+    }
+    if (Array.isArray(collection)) {
+      collection.forEach(push);
+    } else if (typeof collection === 'object') {
+      Object.values(collection).forEach(push);
+    }
+  });
+
+  return merges;
+};
 
 // 处理Excel文件 - 保留所有格式信息
 async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
@@ -266,21 +416,10 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
         }
       }
 
-      if (!properties.autoFilter && columnCount > 0 && rowCount > 0) {
-        properties.autoFilter = {
-          from: { row: 1, column: 1 },
-          to: { row: rowCount, column: columnCount }
-        };
-      }
-
       // 合并单元格
-      if (worksheet.model && worksheet.model.merges) {
-        properties.merges = worksheet.model.merges.map((merge: any) => ({
-          top: merge.top,
-          left: merge.left,
-          bottom: merge.bottom,
-          right: merge.right
-        }));
+      const merges = collectWorksheetMerges(worksheet);
+      if (merges.length > 0) {
+        properties.merges = merges;
       }
       
       // 保护设置 - 简化处理
@@ -288,21 +427,41 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
         properties.protection = (worksheet as any).protection;
       }
       
-    
-    sheets.push({
+      const headerRowIndex = detectHeaderRowIndex(data);
+      const headerRow = Array.isArray(data[headerRowIndex]) ? data[headerRowIndex] : [];
+      const totalRows = Math.max(data.length - headerRowIndex - 1, 0);
+      const totalCols = data.reduce((max, row) => {
+        if (Array.isArray(row)) {
+          return Math.max(max, row.length);
+        }
+        return max;
+      }, Array.isArray(headerRow) ? headerRow.length : 0);
+
+      if (!properties.autoFilter && totalCols > 0) {
+        const headerRowNumber = headerRowIndex + 1;
+        const lastRowNumber = Math.max(headerRowNumber, headerRowNumber + totalRows);
+        properties.autoFilter = {
+          from: { row: headerRowNumber, column: 1 },
+          to: { row: lastRowNumber, column: Math.max(totalCols, columnCount) }
+        };
+      }
+
+      sheets.push({
         name: worksheet.name,
         originalName: worksheet.name,
-        data: data,
-        totalRows: data.length,
-        totalCols: data.length > 0 ? data[0].length : 0,
-      styles: styles,
-      formulas: formulas,
-      richTextRuns,
-        properties: properties,
+        data,
+        totalRows,
+        totalCols,
+        headerRowIndex,
+        headerDetectionMode: 'auto',
+        styles,
+        formulas,
+        richTextRuns,
+        properties,
         // 注意：不要把 workbook 跨线程传回主线程（会导致结构化克隆失败/方法丢失）
         originalWorkbook: undefined,
         sourceFileId: undefined
-    });
+      });
 
       // 调试日志：每个工作表的统计
       try {
