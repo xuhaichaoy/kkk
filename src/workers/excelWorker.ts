@@ -227,11 +227,22 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
           let cellValue: any = '';
           
           if (cell.value !== null && cell.value !== undefined) {
-            if (typeof cell.value === 'object' && 'result' in cell.value) {
-              // 公式单元格
-              cellValue = cell.value.result;
-              formulas[`${rowNumber}_${colNumber}`] = cell.value.formula;
-              formulaCellCount++;
+            if (typeof cell.value === 'object' && cell.value !== null && 'formula' in cell.value) {
+              const formulaValue = cell.value as any;
+              const hasResult = formulaValue.result !== undefined && formulaValue.result !== null;
+              if (hasResult) {
+                cellValue = formulaValue.result;
+              } else if (typeof cell.text === 'string' && cell.text !== '') {
+                cellValue = cell.text;
+              } else if (formulaValue.result === null) {
+                cellValue = '';
+              } else {
+                cellValue = '';
+              }
+              formulas[`${rowNumber}_${colNumber}`] = formulaValue.formula;
+              if (hasResult) {
+                formulaCellCount++;
+              }
             } else if (typeof cell.value === 'object' && 'richText' in cell.value) {
               // 富文本单元格 - 提取纯文本内容
               const richTextValue = cell.value as any;
