@@ -16,6 +16,7 @@ import {
   GridPagination,
   gridPageCountSelector,
   gridPageSelector,
+  GridCellParams,
   useGridApiContext,
   useGridSelector
 } from '@mui/x-data-grid';
@@ -50,6 +51,8 @@ interface DataTableProps {
   onRowUpdate?: (updatedRow: GridRowModel, originalRow: GridRowModel) => GridRowModel;
   pageSizeOptions?: number[];
   initialPageSize?: number;
+  getCellClassName?: (params: GridCellParams) => string;
+  isCellEditable?: (params: GridCellParams) => boolean;
 }
 
 const StyledDataGrid = styled(DataGrid)(({ theme }) => ({
@@ -90,6 +93,22 @@ const StyledDataGrid = styled(DataGrid)(({ theme }) => ({
       '&:hover': {
         backgroundColor: theme.palette.action.selected
       }
+    },
+    '& .excel-merged-cell': {
+      backgroundColor: theme.palette.action.hover
+    },
+    '& .excel-merged-covered': {
+      color: 'transparent',
+      pointerEvents: 'none',
+      '&:hover': {
+        color: 'transparent'
+      }
+    },
+    '& .excel-merged-no-top': {
+      borderTopColor: 'transparent'
+    },
+    '& .excel-merged-no-left': {
+      borderLeftColor: 'transparent'
     },
     '& .MuiDataGrid-footerContainer': {
       borderTop: `1px solid ${theme.palette.divider}`,
@@ -205,7 +224,9 @@ const DataTable: React.FC<DataTableProps> = ({
   onExportExcel,
   onRowUpdate,
   pageSizeOptions = [10, 25, 50, 100],
-  initialPageSize = 10
+  initialPageSize = 10,
+  getCellClassName,
+  isCellEditable
 }) => {
   const [selectedRows, setSelectedRows] = useState<any[]>([]);
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: initialPageSize });
@@ -409,6 +430,8 @@ const DataTable: React.FC<DataTableProps> = ({
         disableColumnMenu={false}
         editMode="cell"
         processRowUpdate={onRowUpdate}
+        getCellClassName={getCellClassName}
+        isCellEditable={isCellEditable}
         sx={{
           '& .MuiDataGrid-toolbarContainer': {
             padding: 2,

@@ -57,7 +57,7 @@ const parseCellAddress = (address: string | undefined | null): { row: number; co
   return { row, column };
 };
 
-const normalizeMergeRange = (merge: any): { top: number; left: number; bottom: number; right: number } | null => {
+export const normalizeMergeRange = (merge: any): { top: number; left: number; bottom: number; right: number } | null => {
   if (!merge) {
     return null;
   }
@@ -282,11 +282,38 @@ export const formatCellValue = (value: any): string => {
     
     // 处理其他对象类型
     if ('result' in value) {
-      return value.result?.toString() || '';
+      const result = (value as any).result;
+      if (result === null || result === undefined) {
+        return '';
+      }
+      return typeof result === 'string' ? result : String(result);
+    }
+
+    if ('formula' in value) {
+      const formulaValue: any = value;
+      if (formulaValue.result !== undefined && formulaValue.result !== null) {
+        return typeof formulaValue.result === 'string' ? formulaValue.result : String(formulaValue.result);
+      }
+      if (typeof formulaValue.text === 'string') {
+        return formulaValue.text;
+      }
+      return '';
+    }
+
+    if ('text' in value && typeof (value as any).text === 'string') {
+      return (value as any).text;
+    }
+
+    if ('value' in value && (value as any).value !== undefined && (value as any).value !== null) {
+      return String((value as any).value);
     }
     
     // 如果是其他对象，尝试转换为字符串
-    return JSON.stringify(value);
+    try {
+      return JSON.stringify(value);
+    } catch (_) {
+      return String(value);
+    }
   }
   
   return value?.toString() || '';

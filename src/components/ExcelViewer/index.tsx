@@ -12,6 +12,7 @@ import {
 import { LoadingSpinner, ErrorAlert, DataTable, CustomTabs, TabItem, SplitTableDialog, MergeSheetsDialog, CompareSheetsDialog, ExportSheetsDialog, RenameSheetDialog, type CreateMergedSheetPayload } from '../common';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import type { GridCellParams } from '@mui/x-data-grid';
 import { 
   SheetData, 
   EditedRowData,
@@ -35,12 +36,100 @@ import {
   detectHeaderRowIndex,
   DEFAULT_HEADER_ROW_INDEX
 } from '../../utils/excelUtils';
+import MergedSheetTable from './MergedSheetTable';
 
 interface ExcelViewerProps {
   files: File[];
 }
 
 const STORAGE_KEY = 'excel_multi_upload';
+
+interface MergeDisplayInfo {
+  isTopLeft: boolean;
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+const buildMergeDisplayMap = (
+  sheet: SheetData,
+  headerRowIndex: number,
+  dataRowCount: number,
+  columnCount: number
+): Map<string, MergeDisplayInfo> => {
+  const map = new Map<string, MergeDisplayInfo>();
+  if (!sheet || dataRowCount <= 0 || columnCount <= 0) {
+    return map;
+  }
+
+  const merges = Array.isArray(sheet.properties?.merges) ? sheet.properties!.merges : [];
+  if (!merges || merges.length === 0) {
+    return map;
+  }
+
+  const headerRowNumber = headerRowIndex + 1;
+  const dataStartRow = headerRowNumber + 1;
+  const maxColumnIndex = Math.max(columnCount - 1, 0);
+
+  merges.forEach((merge: any) => {
+    if (!merge || typeof merge !== 'object') {
+      return;
+    }
+
+    const top = typeof merge.top === 'number' ? merge.top : undefined;
+    const bottom = typeof merge.bottom === 'number' ? merge.bottom : undefined;
+    const left = typeof merge.left === 'number' ? merge.left : undefined;
+    const right = typeof merge.right === 'number' ? merge.right : undefined;
+
+    if (top === undefined || bottom === undefined || left === undefined || right === undefined) {
+      return;
+    }
+
+    const clampedTop = Math.max(top, dataStartRow);
+    const clampedBottom = Math.min(bottom, dataStartRow + dataRowCount - 1);
+    if (clampedTop > clampedBottom) {
+      return;
+    }
+
+    const clampedLeft = Math.max(left, 1);
+    const clampedRight = Math.min(right, maxColumnIndex + 1);
+    if (clampedLeft > clampedRight) {
+      return;
+    }
+
+    const relativeTop = clampedTop - dataStartRow;
+    const relativeBottom = clampedBottom - dataStartRow;
+    const relativeLeft = clampedLeft - 1;
+    const relativeRight = clampedRight - 1;
+
+    for (let row = clampedTop; row <= clampedBottom; row++) {
+      const dataRowIndex = row - dataStartRow;
+      if (dataRowIndex < 0 || dataRowIndex >= dataRowCount) {
+        continue;
+      }
+
+      for (let col = clampedLeft; col <= clampedRight; col++) {
+        const colIndex = col - 1;
+        if (colIndex < 0 || colIndex > maxColumnIndex) {
+          continue;
+        }
+
+        const key = `${dataRowIndex}_${colIndex}`;
+        const isTopLeft = row === top && col === left;
+        map.set(key, {
+          isTopLeft,
+          top: relativeTop,
+          bottom: relativeBottom,
+          left: relativeLeft,
+          right: relativeRight
+        });
+      }
+    }
+  });
+
+  return map;
+};
 
 const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
   const [sheets, setSheets] = useState<SheetData[]>([]);
@@ -63,6 +152,7 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
     return loadEditedData(STORAGE_KEY);
   });
   const [manualHeaderInputs, setManualHeaderInputs] = useState<Record<number, string>>({});
+  const [viewMode, setViewMode] = useState<'grid' | 'merged'>('grid');
 
   const syncManualHeaderInput = useCallback((sheetIndex: number, headerIndex: number) => {
     const display = String(headerIndex + 1);
@@ -83,6 +173,12 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
       delete next[sheetIndex];
       return next;
     });
+  }, []);
+
+  const handleViewModeChange = useCallback((_: React.MouseEvent<HTMLElement>, next: 'grid' | 'merged' | null) => {
+    if (next) {
+      setViewMode(next);
+    }
   }, []);
 
   const clearEditsForSheet = useCallback((sheetIndex: number) => {
@@ -760,6 +856,58 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
     const headers = getHeaderRow(sheet);
     const dataRows = getDataRows(sheet);
     const totalDataRows = getDataRowCount(sheet);
+    const dataRowMaxColumns = dataRows.reduce((max, row) => {
+      if (Array.isArray(row)) {
+        return Math.max(max, row.length);
+      }
+      return max;
+    }, 0);
+    const columnCount = Math.max(headers.length, sheet.totalCols || 0, dataRowMaxColumns);
+    const mergeDisplayMap = buildMergeDisplayMap(sheet, headerIndex, dataRows.length, columnCount);
+
+    const mergedCellClassName = (params: GridCellParams): string => {
+      if (!mergeDisplayMap || mergeDisplayMap.size === 0) {
+        return '';
+      }
+      const rowId = typeof params.id === 'number' ? params.id : Number(params.id);
+      const colIndex = Number(params.field);
+      if (Number.isNaN(rowId) || Number.isNaN(colIndex)) {
+        return '';
+      }
+      const key = `${rowId}_${colIndex}`;
+      const info = mergeDisplayMap.get(key);
+      if (!info) {
+        return '';
+      }
+      const classNames = ['excel-merged-cell'];
+      if (!info.isTopLeft) {
+        classNames.push('excel-merged-covered');
+      }
+      if (rowId > info.top) {
+        classNames.push('excel-merged-no-top');
+      }
+      if (colIndex > info.left) {
+        classNames.push('excel-merged-no-left');
+      }
+      return classNames.join(' ');
+    };
+
+    const mergedCellEditable = (params: GridCellParams): boolean => {
+      if (!mergeDisplayMap || mergeDisplayMap.size === 0) {
+        return true;
+      }
+      const rowId = typeof params.id === 'number' ? params.id : Number(params.id);
+      const colIndex = Number(params.field);
+      if (Number.isNaN(rowId) || Number.isNaN(colIndex)) {
+        return true;
+      }
+      const key = `${rowId}_${colIndex}`;
+      const info = mergeDisplayMap.get(key);
+      if (!info) {
+        return true;
+      }
+      return info.isTopLeft;
+    };
 
     return {
       label: sheet.name,
@@ -819,28 +967,48 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
                 </Typography>
               )}
             </Box>
-            {sheet.headerDetectionMode === 'manual' && (
-              <Button
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+              <ToggleButtonGroup
                 size="small"
-                variant="text"
-                onClick={() => handleHeaderModeChange(index, 'auto')}
+                exclusive
+                value={viewMode}
+                onChange={handleViewModeChange}
               >
-                重新自动检测
-              </Button>
-            )}
+                <ToggleButton value="grid">编辑视图</ToggleButton>
+                <ToggleButton value="merged">合并视图</ToggleButton>
+              </ToggleButtonGroup>
+              {sheet.headerDetectionMode === 'manual' && (
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={() => handleHeaderModeChange(index, 'auto')}
+                >
+                  重新自动检测
+                </Button>
+              )}
+            </Box>
           </Box>
-
-          <DataTable
+          {viewMode === 'grid' ? (
+            <DataTable
             rows={dataRows.map((row: any[], rowIndex: number) => {
               const sheetId = `${index}_${rowIndex}`;
               const editedRowData = editedRows[sheetId] || {};
-              
+              const rowArray = Array.isArray(row) ? row : [];
+              const loopLength = Math.max(columnCount, rowArray.length);
+              const rowRecord: Record<string, any> = {};
+
+              for (let colIndex = 0; colIndex < loopLength; colIndex++) {
+                const fieldKey = String(colIndex);
+                const editedValue = editedRowData[fieldKey];
+                const rawCellValue = colIndex < rowArray.length ? rowArray[colIndex] : '';
+                const baseValue = editedValue !== undefined ? editedValue : formatCellValue(rawCellValue);
+                const mergeInfo = mergeDisplayMap.get(`${rowIndex}_${colIndex}`);
+                rowRecord[fieldKey] = mergeInfo && !mergeInfo.isTopLeft ? '' : baseValue;
+              }
+
               return {
                 id: rowIndex,
-                ...row.reduce((acc, cell, i) => ({ 
-                  ...acc, 
-                  [String(i)]: editedRowData[String(i)] || formatCellValue(cell)
-                }), {}),
+                ...rowRecord,
               };
             })}
             columns={headers.map((header: string, colIndex: number) => ({
@@ -938,9 +1106,24 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
                       });
                     }
                     return updatedRow;
-                  }}
+              }}
+            getCellClassName={mergedCellClassName}
+            isCellEditable={mergedCellEditable}
             height="70vh"
-          />
+            />
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                合并视图为只读模式，用于真实还原 Excel 中的合并单元格效果。
+              </Typography>
+              <MergedSheetTable
+                sheet={sheet}
+                sheetIndex={index}
+                editedRows={editedRows}
+                height="70vh"
+              />
+            </Box>
+          )}
         </Box>
       )
     };
