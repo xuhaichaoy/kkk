@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import type { FC } from 'react';
 import {
   addDays,
@@ -43,8 +43,8 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const cellHeight = isSmallScreen ? 124 : 156;
   const calendarMatrix = useMemo(() => {
-    const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
-    const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
+    const start = startOfWeek(startOfMonth(month), { weekStartsOn: 0 });
+    const end = endOfWeek(endOfMonth(month), { weekStartsOn: 0 });
     const days: Date[] = [];
     let current = start;
     while (current <= end) {

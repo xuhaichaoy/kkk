@@ -6,10 +6,10 @@ import {
   TodoTask,
 } from '../stores/todoStore';
 import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from '@tauri-apps/plugin-notification';
+  ensureNotificationPermission,
+  sendNativeNotification,
+} from '../utils/notificationUtils';
+import { debugError, debugLog } from '../utils/logger';
 
 const REMINDER_GRACE_WINDOW_MINUTES = 10;
 
@@ -23,13 +23,6 @@ const shouldTriggerReminder = (task: TodoTask, now: Date): boolean => {
   return diffMinutes <= REMINDER_GRACE_WINDOW_MINUTES;
 };
 
-const ensureNotificationPermission = async () => {
-  const granted = await isPermissionGranted();
-  if (!granted) {
-    await requestPermission();
-  }
-};
-
 export const useTodoReminders = () => {
   const todos = useAtomValue(todosAtom);
   const updateTodo = useSetAtom(updateTodoAtom);
@@ -41,7 +34,17 @@ export const useTodoReminders = () => {
 
   useEffect(() => {
     let active = true;
-    ensureNotificationPermission();
+    
+    const initNotifications = async () => {
+      try {
+        const hasPermission = await ensureNotificationPermission();
+        debugLog('Notification permission status:', hasPermission);
+      } catch (error) {
+        debugError('Error requesting notification permission:', error);
+      }
+    };
+    
+    initNotifications();
 
     const interval = setInterval(async () => {
       if (!active) return;
@@ -55,12 +58,14 @@ export const useTodoReminders = () => {
         if (!shouldTriggerReminder(task, now)) continue;
 
         try {
-          await sendNotification({
-            title: task.title,
-            body: task.description ? task.description : '任务提醒',
+          debugLog('Sending notification for task:', task.title);
+          await sendNativeNotification({
+            title: `任务提醒: ${task.title}`,
+            body: task.description ? task.description : '该完成任务了！',
           });
+          debugLog('Notification sent successfully for task:', task.title);
         } catch (error) {
-          console.error('Failed to send reminder notification', error);
+          debugError('Failed to send reminder notification for task:', task.title, error);
         }
 
         updateTodo({

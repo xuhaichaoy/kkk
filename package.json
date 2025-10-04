@@ -20,6 +20,7 @@
     "@mui/material": "7.2.0",
     "@mui/x-data-grid": "^8.11.3",
     "@mui/x-date-pickers": "^8.12.0",
+    "@hello-pangea/dnd": "^16.5.0",
     "@tanstack/react-router": "^1.123.2",
     "@tanstack/router-devtools": "^1.123.2",
     "@tauri-apps/api": "^2.8.0",

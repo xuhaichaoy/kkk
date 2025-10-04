@@ -38,7 +38,7 @@
 		},
 		"longDescription": "A modern desktop client for Jellyfin",
 		"macOS": {
-			"entitlements": null,
+			"entitlements": "entitlements.plist",
 			"exceptionDomain": "",
 			"frameworks": [],
 			"providerShortName": null,
@@ -62,7 +62,8 @@
 			"windows": {
 				"installMode": "passive"
 			}
-		}
+		},
+		"notification": null
 	},
 	"app": {
 		"windows": [
