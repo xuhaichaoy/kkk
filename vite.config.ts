@@ -39,7 +39,7 @@ export default defineConfig({
   // Tauri expects a fixed port, fail if that port is not available
   server: {
     strictPort: true,
-    port: 5173,
+    port: 5174,
     host: '127.0.0.1'
   },
   // to make use of `TAURI_PLATFORM`, `TAURI_ARCH`, `TAURI_FAMILY`,
