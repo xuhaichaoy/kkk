@@ -28,10 +28,17 @@ import type { FC } from "react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import TodoKanbanBoard from "../components/todo/TodoKanbanBoard";
 import TodoFormDialog from "../components/todo/TodoFormDialog";
+import TodoTimeLogDialog from "../components/todo/TodoTimeLogDialog";
 import { useTodoReminders } from "../hooks/useTodoReminders";
 import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import type { TodoStatus, TodoTask } from "../stores/todoStore";
-import { addTodoAtom, todosAtom, updateTodoAtom } from "../stores/todoStore";
+import {
+	addTodoAtom,
+	removeTimeEntryAtom,
+	todosAtom,
+	updateTodoAtom,
+	upsertTimeEntryAtom,
+} from "../stores/todoStore";
 
 type QuickNote = {
 	id: string;
@@ -63,6 +70,8 @@ const TodoWidgetPage: FC = () => {
 	const todos = useAtomValue(todosAtom);
 	const addTodo = useSetAtom(addTodoAtom);
 	const updateTodo = useSetAtom(updateTodoAtom);
+	const upsertTimeEntry = useSetAtom(upsertTimeEntryAtom);
+	const removeTimeEntry = useSetAtom(removeTimeEntryAtom);
 	
 	// 启用任务提醒功能
 	useTodoReminders();
@@ -84,6 +93,12 @@ const TodoWidgetPage: FC = () => {
 	const [reminderDraft, setReminderDraft] = useState({ text: "", time: "" });
 	const [noteDraft, setNoteDraft] = useState("");
 	const [editingTask, setEditingTask] = useState<TodoTask | null>(null);
+	const [timeLogOpen, setTimeLogOpen] = useState(false);
+	const [timeLogTaskId, setTimeLogTaskId] = useState<string | null>(null);
+	const timeLogTask = useMemo(() => {
+		if (!timeLogTaskId) return null;
+		return todos.find((item) => item.id === timeLogTaskId) ?? null;
+	}, [timeLogTaskId, todos]);
 
 	useEffect(() => {
 		let isMounted = true;
@@ -180,18 +195,48 @@ const TodoWidgetPage: FC = () => {
 		}
 	}, [currentWindow, isPinned]);
 
-	const handleStatusChange = useCallback(
-		(id: string, status: TodoStatus) => {
-			updateTodo({
-				id,
-				changes: {
-					status,
-					completed: status === "completed",
-					reminderSent: status === "completed" ? true : undefined,
-				},
-			});
+const handleStatusChange = useCallback(
+	(id: string, status: TodoStatus) => {
+		updateTodo({
+			id,
+			changes: {
+				status,
+				completed: status === "completed",
+				reminderSent: status === "completed" ? true : undefined,
+			},
+		});
+	},
+	[updateTodo],
+);
+
+	const handleOpenTimeLog = useCallback((task: TodoTask) => {
+		setTimeLogTaskId(task.id);
+		setTimeLogOpen(true);
+	}, []);
+
+	const handleCloseTimeLog = useCallback(() => {
+		setTimeLogOpen(false);
+		setTimeLogTaskId(null);
+	}, []);
+
+	const handleSubmitTimeEntry = useCallback(
+		(payload: {
+			taskId: string;
+			entryId?: string;
+			date: string;
+			durationMinutes: number;
+			comment?: string;
+		}) => {
+			upsertTimeEntry(payload);
 		},
-		[updateTodo],
+		[upsertTimeEntry],
+	);
+
+	const handleDeleteTimeEntry = useCallback(
+		(taskId: string, entryId: string) => {
+			removeTimeEntry({ taskId, entryId });
+		},
+		[removeTimeEntry],
 	);
 
 	const sortedNotes = useMemo(() => {
@@ -617,15 +662,16 @@ const TodoWidgetPage: FC = () => {
 								添加
 							</Button>
 						</Stack>
-						<Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-							<TodoKanbanBoard
-								tasks={todos}
-								onStatusChange={handleStatusChange}
-								onEditTask={handleEditTask}
-							/>
-						</Box>
-					</Stack>
-				)}
+					<Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+						<TodoKanbanBoard
+							tasks={todos}
+							onStatusChange={handleStatusChange}
+							onEditTask={handleEditTask}
+							onLogTime={handleOpenTimeLog}
+						/>
+					</Box>
+				</Stack>
+			)}
 
 				{viewMode === "notes" && (
 					<Stack spacing={1.5} sx={{ flex: 1, overflow: "hidden" }}>
@@ -910,13 +956,21 @@ const TodoWidgetPage: FC = () => {
 							},
 						}}
 					/>
-				)}
-			</Stack>
-			
-			{/* 任务编辑对话框 */}
-			{editingTask && (
-				<TodoFormDialog
-					open={!!editingTask}
+		)}
+	</Stack>
+
+	<TodoTimeLogDialog
+		open={timeLogOpen}
+		task={timeLogTask}
+		onClose={handleCloseTimeLog}
+		onSubmit={handleSubmitTimeEntry}
+		onDeleteEntry={handleDeleteTimeEntry}
+	/>
+
+	{/* 任务编辑对话框 */}
+	{editingTask && (
+		<TodoFormDialog
+			open={!!editingTask}
 					onClose={handleCloseEditDialog}
 					onSubmit={(values) => {
 						updateTodo({

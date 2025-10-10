@@ -13,6 +13,8 @@ import TodoMetricsPanel from "../components/todo/TodoMetricsPanel";
 import TodoSelectedDatePanel from "../components/todo/TodoSelectedDatePanel";
 import TodoTaskListSection from "../components/todo/TodoTaskListSection";
 import TodoWeeklyReportDialog from "../components/todo/TodoWeeklyReportDialog";
+import TodoTimeLogDialog from "../components/todo/TodoTimeLogDialog";
+import TodoTimeSummaryPanel from "../components/todo/TodoTimeSummaryPanel";
 import { useTodoReminders } from "../hooks/useTodoReminders";
 import {
 	addTodoAtom,
@@ -30,6 +32,8 @@ import {
 	updateTodoAtom,
 	upsertCategoryAtom,
 	upsertTagAtom,
+	upsertTimeEntryAtom,
+	removeTimeEntryAtom,
 } from "../stores/todoStore";
 import {
 	getCalendarTodos,
@@ -62,6 +66,8 @@ const TodoPage: FC = () => {
 	const toggleTodo = useSetAtom(toggleTodoAtom);
 	const upsertTag = useSetAtom(upsertTagAtom);
 	const upsertCategory = useSetAtom(upsertCategoryAtom);
+	const upsertTimeEntry = useSetAtom(upsertTimeEntryAtom);
+	const removeTimeEntry = useSetAtom(removeTimeEntryAtom);
 	const clearCompleted = useSetAtom(clearCompletedAtom);
 	const bulkComplete = useSetAtom(bulkCompleteAtom);
 
@@ -72,6 +78,8 @@ const TodoPage: FC = () => {
 	const [editingTask, setEditingTask] = useState<TodoTask | null>(null);
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 	const [selectedDate, setSelectedDate] = useState<Date>(startOfToday());
+	const [timeLogOpen, setTimeLogOpen] = useState(false);
+	const [timeLogTaskId, setTimeLogTaskId] = useState<string | null>(null);
 	const [taskViewMode, setTaskViewMode] = useState<"list" | "gantt" | "board">(
 		() => {
 			if (typeof window === "undefined") return "list";
@@ -116,6 +124,11 @@ const TodoPage: FC = () => {
 		() => getCalendarTodos(todos, selectedDate),
 		[todos, selectedDate],
 	);
+
+	const timeLogTask = useMemo(() => {
+		if (!timeLogTaskId) return null;
+		return todos.find((item) => item.id === timeLogTaskId) ?? null;
+	}, [timeLogTaskId, todos]);
 
 	const completedCount = useMemo(
 		() => todos.filter((task) => task.completed).length,
@@ -195,6 +208,36 @@ const TodoPage: FC = () => {
 		[removeTodo],
 	);
 
+	const handleOpenTimeLog = useCallback((task: TodoTask) => {
+		setTimeLogTaskId(task.id);
+		setTimeLogOpen(true);
+	}, []);
+
+	const handleCloseTimeLog = useCallback(() => {
+		setTimeLogOpen(false);
+		setTimeLogTaskId(null);
+	}, []);
+
+	const handleSubmitTimeEntry = useCallback(
+		(payload: {
+			taskId: string;
+			entryId?: string;
+			date: string;
+			durationMinutes: number;
+			comment?: string;
+		}) => {
+			upsertTimeEntry(payload);
+		},
+		[upsertTimeEntry],
+	);
+
+	const handleDeleteTimeEntry = useCallback(
+		(taskId: string, entryId: string) => {
+			removeTimeEntry({ taskId, entryId });
+		},
+		[removeTimeEntry],
+	);
+
 	const handleBulkComplete = useCallback(() => {
 		const ids = filteredTasks
 			.filter((task) => !task.completed)
@@ -265,12 +308,12 @@ const TodoPage: FC = () => {
 	return (
 		<Box sx={{ pb: 6, px: { xs: 2, sm: 3, md: 4 } }}>
 			<Stack spacing={4}>
-			<TodoHeroBanner
-				onOpenWidget={handleOpenWidget}
-				onCreateTask={handleOpenCreateForm}
-				onGenerateWeeklyReport={handleOpenWeeklyReport}
-				onTestNotification={handleTestNotification}
-			/>
+				<TodoHeroBanner
+					onOpenWidget={handleOpenWidget}
+					onCreateTask={handleOpenCreateForm}
+					onGenerateWeeklyReport={handleOpenWeeklyReport}
+					onTestNotification={handleTestNotification}
+				/>
 
 				<TodoTaskListSection
 					filteredTasks={filteredTasks}
@@ -297,6 +340,7 @@ const TodoPage: FC = () => {
 					onStatusChange={handleStatusChange}
 					viewMode={taskViewMode}
 					onViewModeChange={setTaskViewMode}
+					onLogTime={handleOpenTimeLog}
 				/>
 
 				<Box
@@ -348,26 +392,38 @@ const TodoPage: FC = () => {
 							onAddTask={handleOpenCreateForm}
 							onEditTask={handleEditTask}
 							onDeleteTask={handleDeleteTask}
+							onLogTime={handleOpenTimeLog}
 						/>
 					</Stack>
 				</Box>
+
+				<Box sx={{ width: "100%" }}>
+					<TodoTimeSummaryPanel tasks={todos} />
+				</Box>
 			</Stack>
 
-		<TodoFormDialog
-			open={formOpen}
-			initialTask={editingTask ?? undefined}
-			onClose={() => setFormOpen(false)}
-			onSubmit={handleFormSubmit}
-			allTags={tags}
-			allCategories={categories}
-			onCreateTag={upsertTag}
-			onCreateCategory={upsertCategory}
-		/>
-		<TodoWeeklyReportDialog
-			open={reportOpen}
-			report={weeklyReport}
-			onClose={handleCloseWeeklyReport}
-		/>
+			<TodoFormDialog
+				open={formOpen}
+				initialTask={editingTask ?? undefined}
+				onClose={() => setFormOpen(false)}
+				onSubmit={handleFormSubmit}
+				allTags={tags}
+				allCategories={categories}
+				onCreateTag={upsertTag}
+				onCreateCategory={upsertCategory}
+			/>
+			<TodoWeeklyReportDialog
+				open={reportOpen}
+				report={weeklyReport}
+				onClose={handleCloseWeeklyReport}
+			/>
+			<TodoTimeLogDialog
+				open={timeLogOpen}
+				task={timeLogTask}
+				onClose={handleCloseTimeLog}
+				onSubmit={handleSubmitTimeEntry}
+				onDeleteEntry={handleDeleteTimeEntry}
+			/>
 		</Box>
 	);
 };

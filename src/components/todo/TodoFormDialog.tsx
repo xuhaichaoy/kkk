@@ -54,9 +54,35 @@ const isoToDayjs = (iso?: string): Dayjs | null => {
 	return dayjs(iso);
 };
 
-const dayjsToIso = (dayjs?: Dayjs | null): string | undefined => {
-	if (!dayjs || !dayjs.isValid()) return undefined;
-	return dayjs.toISOString();
+const dayjsToIso = (
+	value?: Dayjs | null,
+	options?: { fallback?: "startOfDay" | "endOfDay" },
+): string | undefined => {
+	if (!value || !value.isValid()) return undefined;
+
+	if (options?.fallback === "endOfDay") {
+		const isMidnight =
+			value.hour() === 0 &&
+			value.minute() === 0 &&
+			value.second() === 0 &&
+			value.millisecond() === 0;
+		if (isMidnight) {
+			return value.endOf("day").toISOString();
+		}
+	}
+
+	if (options?.fallback === "startOfDay") {
+		const hasNoSpecificTime =
+			value.hour() === 0 &&
+			value.minute() === 0 &&
+			value.second() === 0 &&
+			value.millisecond() === 0;
+		if (hasNoSpecificTime) {
+			return value.startOf("day").toISOString();
+		}
+	}
+
+	return value.toISOString();
 };
 
 const createDefaultValues = (): FormValues => ({
@@ -229,7 +255,7 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 							label="截止时间"
 							value={isoToDayjs(values.dueDate)}
 							onChange={(newValue) => {
-								const isoValue = dayjsToIso(newValue);
+								const isoValue = dayjsToIso(newValue, { fallback: "endOfDay" });
 								setValues((prev) => ({ ...prev, dueDate: isoValue }));
 							}}
 							slotProps={{
@@ -240,7 +266,7 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 							label="提醒时间"
 							value={isoToDayjs(values.reminder)}
 							onChange={(newValue) => {
-								const isoValue = dayjsToIso(newValue);
+								const isoValue = dayjsToIso(newValue, { fallback: "startOfDay" });
 								setValues((prev) => ({ ...prev, reminder: isoValue }));
 							}}
 							slotProps={{

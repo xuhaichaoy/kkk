@@ -4,6 +4,7 @@ import {
 	Droppable,
 	type DropResult,
 } from "@hello-pangea/dnd";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import {
@@ -25,6 +26,7 @@ interface TodoKanbanBoardProps {
 	tasks: TodoTask[];
 	onStatusChange: (id: string, status: TodoStatus) => void;
 	onEditTask: (task: TodoTask) => void;
+	onLogTime?: (task: TodoTask) => void;
 }
 
 const columns: Array<{
@@ -51,6 +53,7 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 	tasks,
 	onStatusChange,
 	onEditTask,
+	onLogTime,
 }) => {
 	const theme = useTheme();
 	const [collapsedColumns, setCollapsedColumns] = useState<Set<TodoStatus>>(
@@ -248,33 +251,48 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 								</Stack>
 							)}
 
-							<Stack
-								direction="row"
-								justifyContent="space-between"
-								alignItems="center"
-							>
-								<Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
-									创建 {format(startOfDay(new Date(task.createdAt)), "MM-dd")}
-								</Typography>
-								<Tooltip
-									title={task.notes ? task.notes : "点击查看详情"}
-									placement="top"
-									arrow
-									disableInteractive
+				<Stack
+					direction="row"
+					justifyContent="space-between"
+					alignItems="center"
+				>
+					<Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
+						创建 {format(startOfDay(new Date(task.createdAt)), "MM-dd")}
+					</Typography>
+					<Stack direction="row" spacing={0.5} alignItems="center">
+						{onLogTime && (
+							<Tooltip title="登记用时" arrow>
+								<IconButton
+									size="small"
+									onClick={(event) => {
+										event.stopPropagation();
+										onLogTime(task);
+									}}
 								>
-									<Typography
-										variant="caption"
-										color="primary.main"
-										sx={{ cursor: "pointer", fontSize: "0.7rem" }}
-										onClick={(e) => {
-											e.stopPropagation();
-											onEditTask(task);
-										}}
-									>
-										查看详情
-									</Typography>
-								</Tooltip>
-							</Stack>
+									<AccessTimeIcon fontSize="small" />
+								</IconButton>
+							</Tooltip>
+						)}
+						<Tooltip
+							title={task.notes ? task.notes : "点击查看详情"}
+							placement="top"
+							arrow
+							disableInteractive
+						>
+							<Typography
+								variant="caption"
+								color="primary.main"
+								sx={{ cursor: "pointer", fontSize: "0.7rem" }}
+								onClick={(event) => {
+									event.stopPropagation();
+									onEditTask(task);
+								}}
+							>
+								查看详情
+							</Typography>
+						</Tooltip>
+					</Stack>
+				</Stack>
 						</Stack>
 					</Paper>
 				)}

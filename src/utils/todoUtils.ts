@@ -195,8 +195,9 @@ export const getCalendarTodos = (todos: TodoTask[], selectedDate: Date) => {
 };
 
 export const resolveTaskStatus = (task: TodoTask): TodoStatus => {
+	if (task.completed) return "completed";
 	if (task.status) return task.status;
-	return task.completed ? "completed" : "notStarted";
+	return "notStarted";
 };
 
 export const statusDisplayMap: Record<

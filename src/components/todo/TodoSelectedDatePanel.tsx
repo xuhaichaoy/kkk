@@ -1,5 +1,6 @@
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import {
 	Avatar,
 	Box,
@@ -27,6 +28,7 @@ interface TodoSelectedDatePanelProps {
 	onAddTask: () => void;
 	onEditTask: (task: TodoTask) => void;
 	onDeleteTask: (task: TodoTask) => void;
+ 	onLogTime: (task: TodoTask) => void;
 }
 
 const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
@@ -36,6 +38,7 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 	onAddTask,
 	onEditTask,
 	onDeleteTask,
+	onLogTime,
 }) => {
 	const formattedDate = format(date, "MM月dd日");
 	const allCompleted = tasks.every((task) => task.completed);
@@ -138,13 +141,17 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 							disablePadding
 							sx={{ display: "flex", flexDirection: "column", gap: 1 }}
 						>
-							{tasks.map((task) => {
-								const dueDate = task.dueDate ? new Date(task.dueDate) : null;
-								const isDueDateValid =
-									dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
-								const dueLabel = isDueDateValid
-									? format(isDueDateValid, "MM-dd HH:mm")
-									: undefined;
+						{tasks.map((task) => {
+							const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+							const isDueDateValid =
+								dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
+							const dueLabel = isDueDateValid
+								? format(isDueDateValid, "MM-dd HH:mm")
+								: undefined;
+							const totalMinutes = (task.timeEntries ?? []).reduce(
+								(sum, entry) => sum + entry.durationMinutes,
+								0,
+							);
 								const now = new Date();
 								const isOverdue = Boolean(
 									isDueDateValid &&
@@ -191,12 +198,29 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 												borderColor: isOverdue ? "error.main" : "primary.main",
 											},
 										}}
-										secondaryAction={
-											<Stack direction="row" spacing={0.3}>
-												<IconButton
-													size="small"
-													onClick={() => onEditTask(task)}
-													sx={{
+					secondaryAction={
+						<Stack direction="row" spacing={0.3}>
+								<IconButton
+									size="small"
+									onClick={(event) => {
+										event.stopPropagation();
+										onLogTime(task);
+									}}
+								sx={{
+									color: "secondary.main",
+									p: 0.5,
+									"&:hover": {
+										backgroundColor: "secondary.main",
+										color: "white",
+									},
+								}}
+							>
+								<AccessTimeIcon sx={{ fontSize: 18 }} />
+							</IconButton>
+							<IconButton
+								size="small"
+								onClick={() => onEditTask(task)}
+								sx={{
 														color: "primary.main",
 														p: 0.5,
 														"&:hover": {
@@ -207,10 +231,10 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 												>
 													<EditIcon sx={{ fontSize: 18 }} />
 												</IconButton>
-												<IconButton
-													size="small"
-													onClick={() => onDeleteTask(task)}
-													sx={{
+							<IconButton
+								size="small"
+								onClick={() => onDeleteTask(task)}
+								sx={{
 														color: "error.main",
 														p: 0.5,
 														"&:hover": {
@@ -326,21 +350,36 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 																}}
 															/>
 														)}
-														{statusMeta && (
-															<Chip
-																size="small"
-																label={statusMeta.label}
-																color={statusMeta.color}
-																variant="outlined"
-																sx={{
-																	height: 20,
-																	fontSize: "0.7rem",
-																	borderRadius: 1,
-																	fontWeight: 600,
-																	"& .MuiChip-label": { px: 0.75 },
-																}}
-															/>
-														)}
+												{statusMeta && (
+													<Chip
+														size="small"
+														label={statusMeta.label}
+														color={statusMeta.color}
+														variant="outlined"
+														sx={{
+															height: 20,
+															fontSize: "0.7rem",
+															borderRadius: 1,
+															fontWeight: 600,
+															"& .MuiChip-label": { px: 0.75 },
+														}}
+													/>
+												)}
+											{totalMinutes > 0 && (
+												<Chip
+													size="small"
+													label={`累计 ${Math.round((totalMinutes / 60) * 10) / 10} 小时`}
+													color="secondary"
+													variant="outlined"
+													sx={{
+														height: 20,
+														fontSize: "0.7rem",
+														borderRadius: 1,
+														fontWeight: 600,
+														"& .MuiChip-label": { px: 0.75 },
+													}}
+												/>
+											)}
 													</Stack>
 
 													{task.description && (

@@ -9,6 +9,7 @@ import {
   isSameDay,
   isSameMonth,
   isToday,
+  startOfDay,
   startOfMonth,
   startOfWeek,
 } from 'date-fns';
@@ -27,6 +28,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CircleIcon from '@mui/icons-material/Circle';
 import type { TodoTask } from '../../stores/todoStore';
+import { compareByDueAndPriority } from '../../utils/todoUtils';
 
 interface TodoCalendarProps {
   tasks: TodoTask[];
@@ -60,13 +62,39 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
 
   const tasksByDay = useMemo(() => {
     const map = new Map<string, TodoTask[]>();
+
+    const pushTask = (date: Date, task: TodoTask) => {
+      if (!date || Number.isNaN(date.getTime())) return;
+      const key = format(startOfDay(date), 'yyyy-MM-dd');
+      const list = map.get(key) ?? [];
+      if (!list.some(existing => existing.id === task.id)) {
+        list.push(task);
+        map.set(key, list);
+      }
+    };
+
     tasks.forEach(task => {
-      if (!task.dueDate) return;
-      const date = format(new Date(task.dueDate), 'yyyy-MM-dd');
-      const list = map.get(date) ?? [];
-      list.push(task);
-      map.set(date, list);
+      if (task.dueDate) {
+        const dueDate = new Date(task.dueDate);
+        pushTask(dueDate, task);
+      }
+
+      if (task.reminder) {
+        const reminderDate = new Date(task.reminder);
+        pushTask(reminderDate, task);
+      }
+
+      const entries = task.timeEntries ?? [];
+      entries.forEach(entry => {
+        const entryDate = new Date(entry.date);
+        pushTask(entryDate, task);
+      });
     });
+
+    map.forEach(list => {
+      list.sort(compareByDueAndPriority);
+    });
+
     return map;
   }, [tasks]);
 

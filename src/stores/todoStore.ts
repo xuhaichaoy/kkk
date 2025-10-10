@@ -5,6 +5,13 @@ import { debugLog } from "../utils/logger";
 export type TodoPriority = "high" | "medium" | "low";
 export type TodoStatus = "notStarted" | "inProgress" | "submitted" | "completed";
 
+export interface TodoTimeEntry {
+	id: string;
+	date: string; // ISO string
+	durationMinutes: number;
+	comment?: string;
+}
+
 export interface TodoTask {
 	id: string;
 	title: string;
@@ -21,6 +28,7 @@ export interface TodoTask {
 	updatedAt: string;
 	completedAt?: string;
 	reminderSent?: boolean;
+	timeEntries?: TodoTimeEntry[];
 }
 
 export interface TodoFilterState {
@@ -66,6 +74,7 @@ export const addTodoAtom = atom(
 			createdAt: now,
 			updatedAt: now,
 			...task,
+			timeEntries: task.timeEntries ?? [],
 		};
 
 		debugLog("➕ 新建任务:", {
@@ -83,6 +92,88 @@ export const addTodoAtom = atom(
 		});
 
 		set(todosAtom, [newTask, ...existing]);
+	},
+);
+
+const ensureTimeEntries = (task: TodoTask): TodoTimeEntry[] =>
+	Array.isArray(task.timeEntries) ? task.timeEntries : [];
+
+export const upsertTimeEntryAtom = atom(
+	null,
+	(
+		_get,
+		set,
+		{
+			taskId,
+			entryId,
+			date,
+			durationMinutes,
+			comment,
+		}: {
+			taskId: string;
+			entryId?: string;
+			date: string;
+			durationMinutes: number;
+			comment?: string;
+		},
+	) => {
+		set(todosAtom, (current) =>
+			current.map((task) => {
+				if (task.id !== taskId) return task;
+
+				const entries = ensureTimeEntries(task);
+				const now = new Date().toISOString();
+
+				if (entryId) {
+					return {
+						...task,
+						timeEntries: entries.map((entry) =>
+							entry.id === entryId
+								? {
+									...entry,
+									date,
+									durationMinutes,
+									comment,
+								}
+								: entry,
+						),
+						updatedAt: now,
+					};
+				}
+
+				const newEntry: TodoTimeEntry = {
+					id: crypto.randomUUID(),
+					date,
+					durationMinutes,
+					comment,
+				};
+
+				return {
+					...task,
+					timeEntries: [newEntry, ...entries],
+					updatedAt: now,
+				};
+			}),
+		);
+	},
+);
+
+export const removeTimeEntryAtom = atom(
+	null,
+	(_get, set, { taskId, entryId }: { taskId: string; entryId: string }) => {
+		set(todosAtom, (current) =>
+			current.map((task) =>
+				task.id === taskId
+					? {
+						...task,
+						timeEntries: ensureTimeEntries(task).filter(
+							(entry) => entry.id !== entryId,
+						),
+						updatedAt: new Date().toISOString(),
+					}
+					: task,
+				),
+		);
 	},
 );
 

@@ -43,10 +43,11 @@ interface TodoTaskListSectionProps {
 	onSelectTask: (task: TodoTask) => void;
 	onToggleComplete: (task: TodoTask) => void;
 	onEditTask: (task: TodoTask) => void;
-	onDeleteTask: (task: TodoTask) => void;
-	onStatusChange: (id: string, status: TodoStatus) => void;
-	viewMode: "list" | "gantt" | "board";
-	onViewModeChange: (mode: "list" | "gantt" | "board") => void;
+  onDeleteTask: (task: TodoTask) => void;
+  onStatusChange: (id: string, status: TodoStatus) => void;
+  viewMode: "list" | "gantt" | "board";
+  onViewModeChange: (mode: "list" | "gantt" | "board") => void;
+  onLogTime: (task: TodoTask) => void;
 }
 
 const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
@@ -70,10 +71,11 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 	onSelectTask,
 	onToggleComplete,
 	onEditTask,
-	onDeleteTask,
-	onStatusChange,
-	viewMode,
-	onViewModeChange,
+  onDeleteTask,
+  onStatusChange,
+  viewMode,
+  onViewModeChange,
+  onLogTime,
 }) => {
 	const activeCount = filteredCount - filteredCompletedCount;
 
@@ -209,14 +211,15 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 				{viewMode === "list" ? (
 					<>
 						<Box>
-							<TodoList
-								tasks={filteredTasks}
-								onToggleComplete={onToggleComplete}
-								onEdit={onEditTask}
-								onDelete={onDeleteTask}
-								selectedId={selectedTaskId ?? undefined}
-								onSelect={onSelectTask}
-							/>
+            <TodoList
+              tasks={filteredTasks}
+              onToggleComplete={onToggleComplete}
+              onEdit={onEditTask}
+              onDelete={onDeleteTask}
+              selectedId={selectedTaskId ?? undefined}
+              onSelect={onSelectTask}
+              onLogTime={onLogTime}
+            />
 						</Box>
 
 						<Typography
@@ -234,6 +237,7 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 						tasks={filteredTasks}
 						onStatusChange={onStatusChange}
 						onEditTask={onEditTask}
+						onLogTime={onLogTime}
 					/>
 				)}
 			</Stack>

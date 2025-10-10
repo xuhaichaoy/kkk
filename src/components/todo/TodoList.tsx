@@ -1,3 +1,4 @@
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditIcon from "@mui/icons-material/Edit";
 import {
@@ -20,6 +21,7 @@ interface TodoListProps {
 	onDelete: (task: TodoTask) => void;
 	selectedId?: string | null;
 	onSelect?: (task: TodoTask) => void;
+	onLogTime: (task: TodoTask) => void;
 }
 
 const priorityColorMap: Record<string, string> = {
@@ -42,11 +44,16 @@ const TodoList = ({
 	onDelete,
 	selectedId,
 	onSelect,
+	onLogTime,
 }: TodoListProps) => {
 	const renderTask = (task: TodoTask) => {
 		const dueLabel = formatDate(task.dueDate);
 		const reminderLabel = formatDate(task.reminder);
 		const isSelected = selectedId === task.id;
+		const totalMinutes = (task.timeEntries ?? []).reduce(
+			(sum, entry) => sum + entry.durationMinutes,
+			0,
+		);
 
 		const handleEditClick = (event: MouseEvent<HTMLButtonElement>) => {
 			event.stopPropagation();
@@ -140,73 +147,92 @@ const TodoList = ({
 							)}
 						</Stack>
 
-						{task.description && (
-							<Typography
-								variant="body2"
-								color="text.secondary"
-								sx={{ wordBreak: "break-word" }}
-							>
-								{task.description}
-							</Typography>
-						)}
+			{task.description && (
+				<Typography
+					variant="body2"
+					color="text.secondary"
+					sx={{ wordBreak: "break-word" }}
+				>
+					{task.description}
+				</Typography>
+			)}
 
-						<Stack
-							direction="row"
-							spacing={1}
-							alignItems="center"
-							flexWrap="wrap"
-							useFlexGap
-						>
-							{dueLabel && (
-								<Chip
-									label={`截止 ${dueLabel}`}
-									size="small"
-									variant="outlined"
-									color={task.completed ? "default" : "primary"}
-								/>
-							)}
-							{reminderLabel && (
-								<Chip
-									label={`提醒 ${reminderLabel}`}
-									size="small"
-									variant="outlined"
-								/>
-							)}
-							{task.tags.map((tag) => (
-								<Chip key={tag} label={tag} size="small" variant="outlined" />
-							))}
-						</Stack>
+			<Stack
+				direction="row"
+				spacing={1}
+				alignItems="center"
+				flexWrap="wrap"
+				useFlexGap
+			>
+				{dueLabel && (
+					<Chip
+						label={`截止 ${dueLabel}`}
+						size="small"
+						variant="outlined"
+						color={task.completed ? "default" : "primary"}
+					/>
+				)}
+				{reminderLabel && (
+					<Chip
+						label={`提醒 ${reminderLabel}`}
+						size="small"
+						variant="outlined"
+					/>
+				)}
+				{totalMinutes > 0 && (
+					<Chip
+						label={`累计 ${Math.round((totalMinutes / 60) * 10) / 10} 小时`}
+						size="small"
+						color="secondary"
+						variant="outlined"
+					/>
+				)}
+				{task.tags.map((tag) => (
+					<Chip key={tag} label={tag} size="small" variant="outlined" />
+				))}
+			</Stack>
 
-						{task.notes && (
-							<Typography
-								variant="caption"
-								color="text.secondary"
-								sx={{ opacity: 0.8, wordBreak: "break-word" }}
-							>
-								{task.notes}
-							</Typography>
-						)}
-					</Stack>
+			{task.notes && (
+				<Typography
+					variant="caption"
+					color="text.secondary"
+					sx={{ opacity: 0.8, wordBreak: "break-word" }}
+				>
+					{task.notes}
+				</Typography>
+			)}
+		</Stack>
 
-					<Stack direction="row" spacing={1} alignItems="center">
-						<Tooltip title="编辑" arrow>
-							<IconButton onClick={handleEditClick} size="small">
-								<EditIcon fontSize="small" />
-							</IconButton>
-						</Tooltip>
-						<Tooltip title="删除" arrow>
-							<IconButton
-								onClick={handleDeleteClick}
-								size="small"
-								color="error"
-							>
-								<DeleteOutlineIcon fontSize="small" />
-							</IconButton>
-						</Tooltip>
-					</Stack>
-				</Stack>
-			</Box>
-		);
+		<Stack direction="row" spacing={1} alignItems="center">
+			<Tooltip title="登记用时" arrow>
+				<IconButton
+					onClick={(event) => {
+						event.stopPropagation();
+						onLogTime(task);
+					}}
+					size="small"
+				>
+					<AccessTimeIcon fontSize="small" />
+				</IconButton>
+			</Tooltip>
+			<Tooltip title="编辑" arrow>
+				<IconButton onClick={handleEditClick} size="small">
+					<EditIcon fontSize="small" />
+				</IconButton>
+			</Tooltip>
+			<Tooltip title="删除" arrow>
+				<IconButton
+					onClick={handleDeleteClick}
+					size="small"
+					color="error"
+				>
+					<DeleteOutlineIcon fontSize="small" />
+				</IconButton>
+			</Tooltip>
+		</Stack>
+	</Stack>
+	</Box>
+	);
 	};
 
 	return (
