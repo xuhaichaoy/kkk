@@ -9,6 +9,52 @@ interface WorkerMessage {
   fileId?: string;
 }
 
+interface WorksheetAdvancedProperties {
+  views?: Array<Record<string, any>>;
+  freezePanes?: {
+    state?: 'frozen' | 'split';
+    xSplit?: number;
+    ySplit?: number;
+    topLeftCell?: string;
+    activeCell?: string;
+  };
+  dataValidations?: Record<string, any>;
+  conditionalFormattings?: any[];
+  comments?: Record<string, { text: string; author?: string }>;
+  tables?: Array<{
+    name: string;
+    displayName?: string;
+    ref: string;
+    headerRow?: boolean;
+    totalsRow?: boolean;
+    style?: {
+      theme?: string;
+      showRowStripes?: boolean;
+      showColumnStripes?: boolean;
+      showFirstColumn?: boolean;
+      showLastColumn?: boolean;
+    };
+    columns?: Array<{ name: string; totalsRowFunction?: string; totalsRowLabel?: string }>;
+  }>;
+  images?: Array<{
+    name?: string;
+    range?: Record<string, any>;
+    imageId?: number;
+    hyperlink?: string;
+    altText?: string;
+  }>;
+}
+
+interface WorksheetProperties extends WorksheetAdvancedProperties {
+  columnCount?: number;
+  rowCount?: number;
+  columns?: Array<{ width?: number; hidden?: boolean; style?: any }>;
+  rows?: Array<{ height?: number; hidden?: boolean } | undefined>;
+  autoFilter?: any;
+  merges?: Array<{ top: number; left: number; bottom: number; right: number }>;
+  protection?: any;
+}
+
 interface SheetData {
   name: string;
   data: any[][];
@@ -20,7 +66,7 @@ interface SheetData {
   formulas?: any;
   // 保存富文本 runs（按单元格地址，如 "1_1"）以便导出时能还原颜色/加粗等
   richTextRuns?: { [cellKey: string]: any[] };
-  properties?: any; // 工作表级别的属性（列宽、行高、合并单元格等）
+  properties?: WorksheetProperties; // 工作表级别的属性（列宽、行高、合并单元格等）
   originalWorkbook?: any; // 原始workbook对象引用
   sourceFileId?: string;
   originalName?: string;
@@ -212,7 +258,8 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
       const data: any[][] = [];
       const styles: any = {};
       const formulas: any = {};
-      const properties: any = {};
+      const properties: WorksheetProperties = {};
+      const commentMap: Record<string, { text: string; author?: string }> = {};
       const richTextRuns: Record<string, any[]> = {};
       
       // 遍历所有行和列
@@ -379,6 +426,27 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
             };
             
           }
+
+          const note = (cell as any).note;
+          if (note) {
+            try {
+              if (typeof note === 'string') {
+                commentMap[cellAddress] = { text: note };
+              } else if (typeof note === 'object') {
+                const text = typeof note.text === 'string'
+                  ? note.text
+                  : Array.isArray(note.text)
+                    ? note.text.map((t: any) => (typeof t === 'string' ? t : t.text || '')).join('')
+                    : '';
+                commentMap[cellAddress] = {
+                  text,
+                  author: note.author
+                };
+              }
+            } catch (_) {
+              commentMap[cellAddress] = { text: String(note) };
+            }
+          }
         }
         
         data[rowNumber - 1] = rowData;
@@ -436,6 +504,81 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
       // 保护设置 - 简化处理
       if ((worksheet as any).protection) {
         properties.protection = (worksheet as any).protection;
+      }
+      if (Object.keys(commentMap).length > 0) {
+        properties.comments = commentMap;
+      }
+
+      if (Array.isArray(worksheet.views) && worksheet.views.length > 0) {
+        try {
+          properties.views = worksheet.views.map(view => ({ ...view }));
+        } catch (_) {
+          properties.views = worksheet.views as any;
+        }
+        const frozenView = worksheet.views.find(view => view.state === 'frozen' || view.xSplit || view.ySplit);
+        if (frozenView) {
+          properties.freezePanes = {
+            state: frozenView.state,
+            xSplit: frozenView.xSplit,
+            ySplit: frozenView.ySplit,
+            topLeftCell: frozenView.topLeftCell,
+            activeCell: frozenView.activeCell
+          };
+        }
+      }
+
+      const validationsModel = (worksheet as any).dataValidations?.model?.dataValidations;
+      if (Array.isArray(validationsModel) && validationsModel.length > 0) {
+        const validations: Record<string, any> = {};
+        validationsModel.forEach((item: any) => {
+          if (item && item.address) {
+            validations[item.address] = { ...item };
+          }
+        });
+        if (Object.keys(validations).length > 0) {
+          properties.dataValidations = validations;
+        }
+      }
+
+      const conditionalFormatting = (worksheet as any).model?.conditionalFormattings;
+      if (Array.isArray(conditionalFormatting) && conditionalFormatting.length > 0) {
+        properties.conditionalFormattings = conditionalFormatting.map((item: any) => ({ ...item }));
+      }
+
+      const modelTables = (worksheet as any).model?.tables;
+      if (Array.isArray(modelTables) && modelTables.length > 0) {
+        properties.tables = modelTables.map((table: any) => ({
+          name: table.name,
+          displayName: table.displayName,
+          ref: table.tableRef || table.ref,
+          headerRow: table.headerRow,
+          totalsRow: table.totalsRow,
+          style: table.style ? { ...table.style } : undefined,
+          columns: Array.isArray(table.columns)
+            ? table.columns.map((col: any) => ({
+                name: col.name,
+                totalsRowFunction: col.totalsRowFunction,
+                totalsRowLabel: col.totalsRowLabel
+              }))
+            : undefined
+        }));
+      }
+
+      if (typeof (worksheet as any).getImages === 'function') {
+        try {
+          const images = (worksheet as any).getImages();
+          if (Array.isArray(images) && images.length > 0) {
+            properties.images = images.map((image: any) => ({
+              name: image.name,
+              range: image.range ? { ...image.range } : undefined,
+              imageId: image.imageId,
+              hyperlink: image.hyperlinks?.hyperlink ?? image.hyperlink,
+              altText: image.altText ?? image.alternativeText
+            }));
+          }
+        } catch (_) {
+          // ignore getImages failures
+        }
       }
       
       const headerRowIndex = detectHeaderRowIndex(data);

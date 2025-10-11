@@ -4,6 +4,52 @@
 
 import * as ExcelJS from 'exceljs';
 
+export interface WorksheetAdvancedProperties {
+  views?: Array<Record<string, any>>;
+  freezePanes?: {
+    state?: 'frozen' | 'split';
+    xSplit?: number;
+    ySplit?: number;
+    topLeftCell?: string;
+    activeCell?: string;
+  };
+  dataValidations?: Record<string, any>;
+  conditionalFormattings?: any[];
+  comments?: Record<string, { text: string; author?: string }>;
+  tables?: Array<{
+    name: string;
+    displayName?: string;
+    ref: string;
+    headerRow?: boolean;
+    totalsRow?: boolean;
+    style?: {
+      theme?: string;
+      showRowStripes?: boolean;
+      showColumnStripes?: boolean;
+      showFirstColumn?: boolean;
+      showLastColumn?: boolean;
+    };
+    columns?: Array<{ name: string; totalsRowFunction?: string; totalsRowLabel?: string }>;
+  }>;
+  images?: Array<{
+    name?: string;
+    range?: Record<string, any>;
+    imageId?: number;
+    hyperlink?: string;
+    altText?: string;
+  }>;
+}
+
+export interface WorksheetProperties extends WorksheetAdvancedProperties {
+  columnCount?: number;
+  rowCount?: number;
+  columns?: Array<{ width?: number; hidden?: boolean; style?: any }>;
+  rows?: Array<{ height?: number; hidden?: boolean } | undefined>;
+  autoFilter?: any;
+  merges?: Array<{ top: number; left: number; bottom: number; right: number }>;
+  protection?: any;
+}
+
 export interface SheetData {
   name: string;
   data: any[][];
@@ -15,7 +61,7 @@ export interface SheetData {
   formulas?: any; // 原始公式信息
   // 富文本 runs（按单元格地址，如 "1_1"），用于保留局部颜色/加粗等
   richTextRuns?: { [cellKey: string]: any[] };
-  properties?: any; // 工作表级别的属性（列宽、行高、合并单元格等）
+  properties?: WorksheetProperties; // 工作表级别的属性（列宽、行高、合并单元格等）
   originalWorkbook?: any; // 原始workbook对象引用
   sourceFileId?: string; // 来源文件标识，用于多文件管理
   originalName?: string; // 原始sheet名称（用于去重）
@@ -1456,6 +1502,235 @@ const adjustFormulaRowReferences = (formula: string, rowOffset: number): string 
   });
 };
 
+const parseRangeRef = (ref: string | undefined | null): { startRow: number; endRow: number; startColumn: number; endColumn: number } | null => {
+  if (!ref || typeof ref !== 'string') {
+    return null;
+  }
+  const [startRef, endRef = startRef] = ref.split(':');
+  const start = parseCellAddress(startRef);
+  const end = parseCellAddress(endRef);
+  if (!start || !end) {
+    return null;
+  }
+  return {
+    startRow: Math.min(start.row, end.row),
+    endRow: Math.max(start.row, end.row),
+    startColumn: Math.min(start.column, end.column),
+    endColumn: Math.max(start.column, end.column)
+  };
+};
+
+const applyWorksheetViews = (worksheet: ExcelJS.Worksheet, properties: WorksheetProperties): void => {
+  if (properties.views && Array.isArray(properties.views) && properties.views.length > 0) {
+    try {
+      (worksheet as any).views = properties.views.map(view => ({ ...view }));
+      return;
+    } catch (_) {
+      // ignore view assignment failure
+    }
+  }
+
+  if (properties.freezePanes) {
+    (worksheet as any).views = [
+      {
+        state: properties.freezePanes.state || 'frozen',
+        xSplit: properties.freezePanes.xSplit,
+        ySplit: properties.freezePanes.ySplit,
+        topLeftCell: properties.freezePanes.topLeftCell,
+        activeCell: properties.freezePanes.activeCell
+      }
+    ];
+  }
+};
+
+const applyDataValidations = (worksheet: ExcelJS.Worksheet, validations: Record<string, any>): void => {
+  if (!validations || typeof validations !== 'object') {
+    return;
+  }
+
+  try {
+    const dv = (worksheet as any).dataValidations;
+    if (dv && typeof dv.removeAll === 'function') {
+      dv.removeAll();
+    } else if (dv && dv.model && Array.isArray(dv.model.dataValidations)) {
+      dv.model.dataValidations = [];
+    }
+  } catch (_) {
+    // ignore inability to reset validations
+  }
+
+  Object.entries(validations).forEach(([addressKey, validation]) => {
+    if (!validation) {
+      return;
+    }
+    const { address, ...rules } = validation as Record<string, any>;
+    const targetAddress = address || addressKey;
+    try {
+      const dv = (worksheet as any).dataValidations;
+      if (dv && typeof dv.add === 'function') {
+        dv.add(targetAddress, { ...rules });
+      }
+    } catch (err) {
+      try {
+        console.warn('[excelExport] failed to restore data validation', err);
+      } catch (_) {}
+    }
+  });
+};
+
+const applyConditionalFormatting = (worksheet: ExcelJS.Worksheet, conditionalFormattings: any[]): void => {
+  if (!Array.isArray(conditionalFormattings) || conditionalFormattings.length === 0) {
+    return;
+  }
+
+  conditionalFormattings.forEach((config: any) => {
+    if (!config || !config.ref || !config.rules) {
+      return;
+    }
+    try {
+      const addConditionalFormatting = (worksheet as any).addConditionalFormatting;
+      if (typeof addConditionalFormatting === 'function') {
+        addConditionalFormatting.call(worksheet, {
+        ref: config.ref,
+        rules: Array.isArray(config.rules) ? config.rules.map((rule: any) => ({ ...rule })) : config.rules
+        });
+      }
+    } catch (err) {
+      try {
+        console.warn('[excelExport] failed to restore conditional formatting', err);
+      } catch (_) {}
+    }
+  });
+};
+
+const applyComments = (worksheet: ExcelJS.Worksheet, comments: Record<string, { text: string; author?: string }>): void => {
+  if (!comments || typeof comments !== 'object') {
+    return;
+  }
+
+  Object.entries(comments).forEach(([cellKey, comment]) => {
+    const [rowStr, colStr] = cellKey.split('_');
+    const row = parseInt(rowStr, 10);
+    const column = parseInt(colStr, 10);
+    if (Number.isNaN(row) || Number.isNaN(column)) {
+      return;
+    }
+    const cell = worksheet.getCell(row, column);
+    if (!comment || typeof comment.text === 'undefined') {
+      cell.note = undefined;
+      return;
+    }
+    if (comment.author) {
+      cell.note = { text: comment.text, author: comment.author } as any;
+    } else {
+      cell.note = comment.text as any;
+    }
+  });
+};
+
+const extractRangeMatrix = (sheetData: SheetData, range: { startRow: number; endRow: number; startColumn: number; endColumn: number }): any[][] => {
+  const matrix: any[][] = [];
+  const rows = Array.isArray(sheetData.data) ? sheetData.data : [];
+  for (let row = range.startRow; row <= range.endRow; row++) {
+    const sourceRow = rows[row - 1] || [];
+    const rowValues: any[] = [];
+    for (let column = range.startColumn; column <= range.endColumn; column++) {
+      rowValues.push(sourceRow[column - 1] ?? null);
+    }
+    matrix.push(rowValues);
+  }
+  return matrix;
+};
+
+const applyTables = (worksheet: ExcelJS.Worksheet, sheetData: SheetData): void => {
+  const tables = sheetData.properties?.tables;
+  if (!Array.isArray(tables) || tables.length === 0) {
+    return;
+  }
+
+  tables.forEach((table, index) => {
+    if (!table || !table.ref) {
+      return;
+    }
+    const range = parseRangeRef(table.ref);
+    if (!range) {
+      return;
+    }
+
+    const headerRowIncluded = table.headerRow !== false;
+    const totalsRowIncluded = !!table.totalsRow;
+
+    const matrix = extractRangeMatrix(sheetData, range);
+    if (matrix.length === 0 && !headerRowIncluded) {
+      return;
+    }
+
+    let headerRow: any[] = [];
+    if (headerRowIncluded && matrix.length > 0) {
+      headerRow = matrix.shift() ?? [];
+    }
+
+    if (totalsRowIncluded && matrix.length > 0) {
+      matrix.pop();
+    }
+
+    const columns = table.columns?.length
+      ? table.columns.map((col, idx) => ({
+          name: col?.name ?? (headerRow[idx] ?? `列${idx + 1}`),
+          totalsRowFunction: col?.totalsRowFunction,
+          totalsRowLabel: col?.totalsRowLabel
+        }))
+      : (() => {
+          const columnCount = range.endColumn - range.startColumn + 1;
+          return Array.from({ length: columnCount }, (_, idx) => ({
+            name: headerRow[idx] ?? `列${idx + 1}`
+          }));
+        })();
+
+    const rows = matrix.map(row =>
+      row.map(value => (value === undefined ? null : value))
+    );
+
+    try {
+      const addTable = (worksheet as any).addTable;
+      if (typeof addTable === 'function') {
+        addTable.call(worksheet, {
+        name: table.name || `Table_${index + 1}`,
+        displayName: table.displayName || table.name || `Table_${index + 1}`,
+        ref: table.ref,
+        headerRow: headerRowIncluded,
+        totalsRow: totalsRowIncluded,
+        style: table.style ? { ...table.style } : undefined,
+        columns,
+        rows
+        });
+      }
+    } catch (err) {
+      try {
+        console.warn('[excelExport] failed to recreate table', err);
+      } catch (_) {}
+    }
+  });
+};
+
+const applyAdvancedWorksheetProps = (worksheet: ExcelJS.Worksheet, sheetData: SheetData): void => {
+  if (!sheetData.properties) {
+    return;
+  }
+  const props = sheetData.properties;
+  applyWorksheetViews(worksheet, props);
+  if (props.comments) {
+    applyComments(worksheet, props.comments);
+  }
+  if (props.dataValidations) {
+    applyDataValidations(worksheet, props.dataValidations);
+  }
+  if (props.conditionalFormattings) {
+    applyConditionalFormatting(worksheet, props.conditionalFormattings);
+  }
+  applyTables(worksheet, sheetData);
+};
+
 // 删除不再需要的旧函数
 
 // 删除不再需要的旧函数
@@ -1684,6 +1959,7 @@ const copyWorksheetFromOriginal = (
   });
 
   populateWorksheetData(copiedWorksheet, sheetData, options, editedCells);
+  applyAdvancedWorksheetProps(copiedWorksheet, sheetData);
 
   return true;
 };
@@ -1967,6 +2243,8 @@ const createWorksheetFromSheetData = (
       } as any;
     }
   }
+
+  applyAdvancedWorksheetProps(worksheet, sheetData);
 
   return worksheet;
 };
