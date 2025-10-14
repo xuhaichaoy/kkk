@@ -22,6 +22,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const tabs = React.useMemo(
     () => [
       { label: 'Excel 工具', value: '/' as const },
+      { label: '语音识别', value: '/speech' as const },
       { label: '任务面板', value: '/todo' as const },
     ],
     [],
@@ -67,13 +68,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </Box>
             <Tabs value={currentTab} indicatorColor="primary" textColor="primary" sx={{ alignSelf: 'flex-start' }}>
               {tabs.map(tab => (
-                <Tab
-                  key={tab.value}
-                  label={tab.label}
-                  value={tab.value}
-                  component={Link}
-                  to={tab.value as '/' | '/todo'}
-                />
+                <Tab key={tab.value} label={tab.label} value={tab.value} component={Link} to={tab.value} />
               ))}
             </Tabs>
           </Toolbar>

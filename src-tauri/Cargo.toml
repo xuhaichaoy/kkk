@@ -29,6 +29,16 @@ tauri-plugin-notification = "2.0.0-rc.1"
 tauri-plugin-upload = "2.0.0"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+whisper-rs = "0.15.1"
+reqwest = { version = "0.12.5", features = ["stream", "rustls-tls"] }
+tokio = { version = "1.38", features = ["rt-multi-thread", "macros"] }
+hound = "3.5"
+base64 = "0.22"
+futures-util = "0.3"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde", "clock"] }
+thiserror = "1.0"
+num_cpus = "1.16"
 
 [features]
 # by default Tauri runs in production mode
