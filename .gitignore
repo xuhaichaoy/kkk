@@ -42,3 +42,7 @@ target/
 generateBanner
 # Million Lint
 .million
+
+# Model files
+*.bin
+src-tauri/resources/models/
