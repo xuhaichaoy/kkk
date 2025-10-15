@@ -46,3 +46,5 @@ generateBanner
 # Model files
 *.bin
 src-tauri/resources/models/
+**/models/*.bin
+**/models/*.ggml*
