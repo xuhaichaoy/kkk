@@ -4,7 +4,7 @@ mod speech;
 
 use speech::{
     delete_speech_session, ensure_speech_model, list_speech_sessions, transcribe_audio,
-    SpeechManager,
+    update_speech_session, SpeechManager,
 };
 use tauri::Manager;
 use tauri_plugin_log::{fern::colors::ColoredLevelConfig, Target, TargetKind};
@@ -53,6 +53,7 @@ fn main() {
             ensure_speech_model,
             list_speech_sessions,
             delete_speech_session,
+            update_speech_session,
             transcribe_audio
         ])
         .plugin(tauri_plugin_fs::init())

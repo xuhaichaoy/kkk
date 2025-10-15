@@ -2,6 +2,7 @@ import React from 'react';
 import { Alert, Box, Stack } from '@mui/material';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { readFile, BaseDirectory } from '@tauri-apps/plugin-fs';
 
 import RecorderControls from '../components/speech/RecorderControls';
 import TranscriptView from '../components/speech/TranscriptView';
@@ -26,12 +27,15 @@ const SpeechToTextPage: React.FC = () => {
   const [transcribing, setTranscribing] = React.useState(false);
   const [ensuringModel, setEnsuringModel] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [transcript, setTranscript] = React.useState('');
+  const [transcriptDraft, setTranscriptDraft] = React.useState('');
   const [segments, setSegments] = React.useState<TranscriptSegment[]>([]);
   const [sessions, setSessions] = React.useState<SpeechSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = React.useState<string | null>(null);
+  const [currentSession, setCurrentSession] = React.useState<SpeechSession | null>(null);
   const [audioLevel, setAudioLevel] = React.useState(0);
   const [recordingDuration, setRecordingDuration] = React.useState(0);
+  const [isSavingTranscript, setIsSavingTranscript] = React.useState(false);
+  const [audioSrc, setAudioSrc] = React.useState<string | null>(null);
   const hasMediaDevices = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices);
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
@@ -40,9 +44,11 @@ const SpeechToTextPage: React.FC = () => {
   const selectedSessionIdRef = React.useRef<string | null>(null);
   const audioContextRef = React.useRef<AudioContext | null>(null);
   const analyserRef = React.useRef<AnalyserNode | null>(null);
-  const dataArrayRef = React.useRef<Uint8Array | null>(null);
+  const dataArrayRef = React.useRef<Uint8Array<ArrayBuffer> | null>(null);
   const rafRef = React.useRef<number | null>(null);
   const recordingStartRef = React.useRef<number | null>(null);
+  const audioLoadIdRef = React.useRef(0);
+  const audioUrlRef = React.useRef<string | null>(null);
 
   const stopMonitoring = React.useCallback(() => {
     if (rafRef.current !== null) {
@@ -75,7 +81,7 @@ const SpeechToTextPage: React.FC = () => {
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
         analyserRef.current = analyser;
-        const dataArray = new Uint8Array(analyser.fftSize);
+        const dataArray = new Uint8Array(new ArrayBuffer(analyser.fftSize));
         dataArrayRef.current = dataArray;
         source.connect(analyser);
         recordingStartRef.current = performance.now();
@@ -111,12 +117,48 @@ const SpeechToTextPage: React.FC = () => {
     [stopMonitoring],
   );
 
+  const prepareAudioSource = React.useCallback(async (session: SpeechSession | null) => {
+    audioLoadIdRef.current += 1;
+    const loadId = audioLoadIdRef.current;
+
+    setAudioSrc(null);
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+
+    if (!session?.audio_path) {
+      return;
+    }
+
+    try {
+      const bytes = await readFile(`speech/${session.audio_path}`, {
+        baseDir: BaseDirectory.AppLocalData,
+      });
+      const blob = new Blob([bytes], { type: 'audio/wav' });
+      const objectUrl = URL.createObjectURL(blob);
+      if (audioLoadIdRef.current === loadId) {
+        audioUrlRef.current = objectUrl;
+        setAudioSrc(objectUrl);
+      } else {
+        URL.revokeObjectURL(objectUrl);
+      }
+    } catch (err) {
+      console.error(err);
+      if (audioLoadIdRef.current === loadId) {
+        setAudioSrc(null);
+      }
+    }
+  }, []);
+
   const applySession = React.useCallback((session: SpeechSession | null) => {
     selectedSessionIdRef.current = session?.id ?? null;
     setSelectedSessionId(session?.id ?? null);
-    setTranscript(session?.transcript ?? '');
+    setCurrentSession(session);
+    setTranscriptDraft(session?.transcript ?? '');
     setSegments(session?.segments ?? []);
-  }, []);
+    void prepareAudioSource(session);
+  }, [prepareAudioSource]);
 
   const loadSessions = React.useCallback(async (preferredId?: string | null) => {
     try {
@@ -334,6 +376,61 @@ const SpeechToTextPage: React.FC = () => {
     [applySession, loadSessions, selectedSessionId],
   );
 
+  const handleTranscriptChange = React.useCallback((value: string) => {
+    setTranscriptDraft(value);
+  }, []);
+
+  const handleSaveTranscript = React.useCallback(async () => {
+    if (!currentSession || transcriptDraft === currentSession.transcript) {
+      return;
+    }
+    setIsSavingTranscript(true);
+    setError(null);
+    try {
+      const updated = await invoke<SpeechSession>('update_speech_session', {
+        payload: {
+          session_id: currentSession.id,
+          transcript: transcriptDraft,
+        },
+      });
+      setCurrentSession(updated);
+      setTranscriptDraft(updated.transcript);
+      setSegments(updated.segments);
+      setSessions(prev => {
+        const index = prev.findIndex(item => item.id === updated.id);
+        if (index === -1) {
+          return [updated, ...prev];
+        }
+        const next = [...prev];
+        next[index] = updated;
+        return next;
+      });
+    } catch (invokeError) {
+      console.error(invokeError);
+      setError('保存文案失败，请稍后重试。');
+    } finally {
+      setIsSavingTranscript(false);
+    }
+  }, [currentSession, transcriptDraft]);
+
+  const hasTranscriptChanges = React.useMemo(() => {
+    if (!currentSession) {
+      return false;
+    }
+    return transcriptDraft !== currentSession.transcript;
+  }, [currentSession, transcriptDraft]);
+
+  const transcriptLanguage = currentSession?.language ?? language;
+
+  React.useEffect(() => {
+    return () => {
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <Box sx={{ 
       maxWidth: '100%',
@@ -383,10 +480,16 @@ const SpeechToTextPage: React.FC = () => {
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <CardContainer minHeight="500px">
               <TranscriptView
-                language={selectedSessionId ? sessions.find(item => item.id === selectedSessionId)?.language ?? language : language}
-                transcript={transcript}
+                language={transcriptLanguage}
+                transcript={transcriptDraft}
                 segments={segments}
                 isLoading={transcribing}
+                canEdit={Boolean(currentSession)}
+                onTranscriptChange={handleTranscriptChange}
+                onSaveTranscript={currentSession ? handleSaveTranscript : undefined}
+                isSavingTranscript={isSavingTranscript}
+                hasChanges={hasTranscriptChanges}
+                audioSrc={audioSrc}
               />
             </CardContainer>
           </Box>

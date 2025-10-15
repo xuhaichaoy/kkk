@@ -59,6 +59,8 @@ pub enum SpeechError {
     InvalidModelPath,
     #[error("tauri error: {0}")]
     Tauri(#[from] tauri::Error),
+    #[error("未找到指定的转写记录：{0}")]
+    SessionNotFound(String),
 }
 
 impl From<hound::Error> for SpeechError {
@@ -178,6 +180,15 @@ pub struct TranscribeAudioPayload {
 #[derive(Debug, Serialize)]
 pub struct TranscribeAudioResponse {
     pub session: SpeechSession,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSpeechSessionPayload {
+    pub session_id: String,
+    #[serde(default)]
+    pub transcript: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 struct TranscriptionResult {
@@ -339,6 +350,41 @@ impl SpeechManager {
             }
         }
         Ok(())
+    }
+
+    pub async fn update_session(
+        &self,
+        payload: UpdateSpeechSessionPayload,
+    ) -> Result<SpeechSession, SpeechError> {
+        let UpdateSpeechSessionPayload {
+            session_id,
+            transcript,
+            title,
+        } = payload;
+
+        let mut guard = self.state.lock().await;
+        let session = guard
+            .sessions
+            .iter_mut()
+            .find(|session| session.id == session_id)
+            .ok_or_else(|| SpeechError::SessionNotFound(session_id.clone()))?;
+
+        if let Some(title) = title {
+            let trimmed = title.trim();
+            if !trimmed.is_empty() {
+                session.title = trimmed.to_string();
+            }
+        }
+
+        if let Some(transcript) = transcript {
+            session.transcript = transcript.clone();
+            let transcript_path = self.sessions_dir.join(&session.id).join("transcript.txt");
+            fs::write(&transcript_path, transcript.as_bytes())?;
+        }
+
+        let result = session.clone();
+        self.persist_sessions(&guard.sessions)?;
+        Ok(result)
     }
 
     pub async fn transcribe_audio(
@@ -594,6 +640,17 @@ pub async fn delete_speech_session(
 ) -> Result<(), String> {
     state
         .delete_session(&session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_speech_session(
+    state: tauri::State<'_, SpeechManager>,
+    payload: UpdateSpeechSessionPayload,
+) -> Result<SpeechSession, String> {
+    state
+        .update_session(payload)
         .await
         .map_err(|e| e.to_string())
 }

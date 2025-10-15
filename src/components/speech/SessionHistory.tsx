@@ -101,6 +101,8 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ sessions, selectedSessi
                         </Typography>
                       </Stack>
                     }
+                    primaryTypographyProps={{ component: 'div' }}
+                    secondaryTypographyProps={{ component: 'div' }}
                   />
                 </ListItemButton>
                 <ListItemSecondaryAction>

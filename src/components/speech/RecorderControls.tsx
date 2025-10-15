@@ -207,13 +207,6 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
           >
             {buttonLabel}
           </Button>
-          <Chip
-            icon={isRecording ? <FiberManualRecordIcon color="error" fontSize="small" /> : undefined}
-            label={isRecording ? '录音中' : transcribing ? '转写中' : modelReady ? '待命' : '准备中'}
-            color={isRecording ? 'error' : 'default'}
-            variant={isRecording ? 'filled' : 'outlined'}
-            sx={{ height: 32, fontSize: '0.875rem', fontWeight: 500 }}
-          />
         </Stack>
 
         {!modelReady && (
