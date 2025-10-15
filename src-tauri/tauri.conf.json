@@ -44,7 +44,9 @@
 			"providerShortName": null,
 			"signingIdentity": null
 		},
-		"resources": [],
+	"resources": [
+		"resources/models/ggml-small.bin"
+	],
 		"shortDescription": "Blink",
 		"targets": ["deb", "appimage", "nsis", "app", "dmg"],
 		"licenseFile": "../LICENSE"

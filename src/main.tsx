@@ -17,6 +17,14 @@ declare module '@tanstack/react-router' {
   }
 }
 
+// 隐藏加载动画
+setTimeout(() => {
+  const appLoading = document.querySelector('.app-loading');
+  if (appLoading) {
+    appLoading.classList.add('hidden');
+  }
+}, 100);
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider theme={theme}>

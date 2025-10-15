@@ -19,6 +19,8 @@
 		"fs:allow-write",
 		"fs:allow-app-write",
 		"fs:allow-read",
+		"fs:allow-applocaldata-read-recursive",
+		"fs:allow-applocaldata-write-recursive",
 		"upload:allow-download",
 		"clipboard-manager:allow-write-text"
 	]

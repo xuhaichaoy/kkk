@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TodoIndexRouteImport } from './routes/todo/index'
+import { Route as SpeechIndexRouteImport } from './routes/speech/index'
 import { Route as TodoWidgetRouteImport } from './routes/todo/widget'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const TodoIndexRoute = TodoIndexRouteImport.update({
   path: '/todo/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SpeechIndexRoute = SpeechIndexRouteImport.update({
+  id: '/speech/',
+  path: '/speech/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TodoWidgetRoute = TodoWidgetRouteImport.update({
   id: '/todo/widget',
   path: '/todo/widget',
@@ -32,30 +38,34 @@ const TodoWidgetRoute = TodoWidgetRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/todo/widget': typeof TodoWidgetRoute
+  '/speech': typeof SpeechIndexRoute
   '/todo': typeof TodoIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/todo/widget': typeof TodoWidgetRoute
+  '/speech': typeof SpeechIndexRoute
   '/todo': typeof TodoIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/todo/widget': typeof TodoWidgetRoute
+  '/speech/': typeof SpeechIndexRoute
   '/todo/': typeof TodoIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/todo/widget' | '/todo'
+  fullPaths: '/' | '/todo/widget' | '/speech' | '/todo'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/todo/widget' | '/todo'
-  id: '__root__' | '/' | '/todo/widget' | '/todo/'
+  to: '/' | '/todo/widget' | '/speech' | '/todo'
+  id: '__root__' | '/' | '/todo/widget' | '/speech/' | '/todo/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   TodoWidgetRoute: typeof TodoWidgetRoute
+  SpeechIndexRoute: typeof SpeechIndexRoute
   TodoIndexRoute: typeof TodoIndexRoute
 }
 
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TodoIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/speech/': {
+      id: '/speech/'
+      path: '/speech'
+      fullPath: '/speech'
+      preLoaderRoute: typeof SpeechIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/todo/widget': {
       id: '/todo/widget'
       path: '/todo/widget'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   TodoWidgetRoute: TodoWidgetRoute,
+  SpeechIndexRoute: SpeechIndexRoute,
   TodoIndexRoute: TodoIndexRoute,
 }
 export const routeTree = rootRouteImport

@@ -1,5 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod speech;
+
+use speech::{
+    cancel_transcription, delete_speech_session, ensure_speech_model, list_speech_sessions,
+    open_speech_session_folder, transcribe_audio, update_speech_session, SpeechManager,
+};
 use tauri::Manager;
 use tauri_plugin_log::{fern::colors::ColoredLevelConfig, Target, TargetKind};
 
@@ -24,7 +30,7 @@ fn open_todo_widget(app_handle: tauri::AppHandle) -> Result<(), String> {
     .always_on_top(true)
     .build()
     .map_err(|e| e.to_string())?;
-    
+
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
 
@@ -33,7 +39,25 @@ fn open_todo_widget(app_handle: tauri::AppHandle) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![open_todo_widget])
+        .setup(|app| {
+            let handle = app.handle();
+            let manager = SpeechManager::new(&handle).map_err(|e| {
+                let boxed: Box<dyn std::error::Error> = Box::new(e);
+                boxed
+            })?;
+            app.manage(manager);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            open_todo_widget,
+            ensure_speech_model,
+            list_speech_sessions,
+            delete_speech_session,
+            update_speech_session,
+            transcribe_audio,
+            cancel_transcription,
+            open_speech_session_folder
+        ])
         .plugin(tauri_plugin_fs::init())
         // 暂时禁用 window-state 插件来避免窗口状态冲突
         // .plugin(tauri_plugin_window_state::Builder::new().build())
