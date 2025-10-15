@@ -3,7 +3,10 @@ use std::{
     fs::File,
     io::{self, Cursor, Write},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -35,6 +38,67 @@ pub struct SpeechManager {
 
 struct SpeechState {
     sessions: Vec<SpeechSession>,
+    active_transcription: Option<ActiveTranscription>,
+}
+
+struct ActiveTranscription {
+    cancel_flag: Arc<AtomicBool>,
+}
+
+impl ActiveTranscription {
+    fn new(cancel_flag: Arc<AtomicBool>) -> Self {
+        Self { cancel_flag }
+    }
+
+    fn cancel(&self) {
+        self.cancel_flag.store(true, Ordering::Relaxed);
+    }
+}
+
+struct ActiveTranscriptionHandle {
+    state: Arc<async_runtime::Mutex<SpeechState>>,
+    released: bool,
+}
+
+impl ActiveTranscriptionHandle {
+    async fn acquire(
+        state: Arc<async_runtime::Mutex<SpeechState>>,
+        cancel_flag: Arc<AtomicBool>,
+    ) -> Result<Self, SpeechError> {
+        {
+            let mut guard = state.lock().await;
+            if guard.active_transcription.is_some() {
+                return Err(SpeechError::TranscriptionInProgress);
+            }
+            guard.active_transcription = Some(ActiveTranscription::new(cancel_flag));
+        }
+        Ok(Self {
+            state: state.clone(),
+            released: false,
+        })
+    }
+
+    async fn release(&mut self) {
+        if self.released {
+            return;
+        }
+        let mut guard = self.state.lock().await;
+        guard.active_transcription = None;
+        self.released = true;
+    }
+}
+
+impl Drop for ActiveTranscriptionHandle {
+    fn drop(&mut self) {
+        if self.released {
+            return;
+        }
+        let state = self.state.clone();
+        async_runtime::spawn(async move {
+            let mut guard = state.lock().await;
+            guard.active_transcription = None;
+        });
+    }
 }
 
 #[derive(Debug, Error)]
@@ -61,6 +125,10 @@ pub enum SpeechError {
     Tauri(#[from] tauri::Error),
     #[error("未找到指定的转写记录：{0}")]
     SessionNotFound(String),
+    #[error("已有转写任务正在进行")]
+    TranscriptionInProgress,
+    #[error("转写已取消")]
+    TranscriptionCancelled,
 }
 
 impl From<hound::Error> for SpeechError {
@@ -223,7 +291,10 @@ impl SpeechManager {
             model_path,
             sessions_dir,
             sessions_file,
-            state: Arc::new(async_runtime::Mutex::new(SpeechState { sessions })),
+            state: Arc::new(async_runtime::Mutex::new(SpeechState {
+                sessions,
+                active_transcription: None,
+            })),
             http: Client::new(),
         })
     }
@@ -387,31 +458,78 @@ impl SpeechManager {
         Ok(result)
     }
 
+    pub async fn cancel_transcription(&self) -> bool {
+        let guard = self.state.lock().await;
+        if let Some(active) = guard.active_transcription.as_ref() {
+            active.cancel();
+            true
+        } else {
+            false
+        }
+    }
+
     pub async fn transcribe_audio(
         &self,
         payload: TranscribeAudioPayload,
     ) -> Result<SpeechSession, SpeechError> {
         let language = SpeechLanguage::try_from(payload.language.as_str())?;
         let audio_bytes = decode_audio_base64(&payload.audio_base64)?;
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let mut active_guard =
+            ActiveTranscriptionHandle::acquire(self.state.clone(), cancel_flag.clone()).await?;
         let session_id = Uuid::new_v4().to_string();
         let session_dir = self.sessions_dir.join(&session_id);
-        fs::create_dir_all(&session_dir)?;
+        if let Err(err) = fs::create_dir_all(&session_dir) {
+            active_guard.release().await;
+            return Err(err.into());
+        }
 
         let audio_relative_path = format!("sessions/{}/recording.wav", session_id);
         let audio_path = self.base_dir.join(&audio_relative_path);
         if let Some(parent) = audio_path.parent() {
-            fs::create_dir_all(parent)?;
+            if let Err(err) = fs::create_dir_all(parent) {
+                active_guard.release().await;
+                let _ = fs::remove_dir_all(&session_dir);
+                return Err(err.into());
+            }
         }
-        fs::write(&audio_path, &audio_bytes)?;
+        if let Err(err) = fs::write(&audio_path, &audio_bytes) {
+            active_guard.release().await;
+            let _ = fs::remove_dir_all(&session_dir);
+            return Err(err.into());
+        }
 
         let model_path = self.model_path.clone();
         let title_override = payload.session_title.clone();
+        let audio_for_transcription = audio_bytes;
 
-        let transcription = async_runtime::spawn_blocking(move || {
-            transcribe_blocking(&model_path, &audio_bytes, language)
+        let transcription_result = match async_runtime::spawn_blocking({
+            let cancel_flag = cancel_flag.clone();
+            move || {
+                transcribe_blocking(&model_path, &audio_for_transcription, language, cancel_flag)
+            }
         })
         .await
-        .map_err(|err| SpeechError::Join(err.to_string()))??;
+        {
+            Ok(result) => result,
+            Err(err) => {
+                active_guard.release().await;
+                let _ = fs::remove_dir_all(&session_dir);
+                return Err(SpeechError::Join(err.to_string()));
+            }
+        };
+
+        let transcription = match transcription_result {
+            Ok(result) => {
+                active_guard.release().await;
+                result
+            }
+            Err(err) => {
+                active_guard.release().await;
+                let _ = fs::remove_dir_all(&session_dir);
+                return Err(err);
+            }
+        };
 
         let timestamp = Local::now();
         let default_title = format!(
@@ -473,6 +591,7 @@ fn transcribe_blocking(
     model_path: &Path,
     audio_bytes: &[u8],
     language: SpeechLanguage,
+    cancel_flag: Arc<AtomicBool>,
 ) -> Result<TranscriptionResult, SpeechError> {
     let (samples, sample_rate) = decode_wav_to_mono_f32(audio_bytes)?;
     let audio = if sample_rate != 16_000 {
@@ -492,7 +611,26 @@ fn transcribe_blocking(
     params.set_n_threads(num_cpus::get() as i32);
     params.set_no_context(true);
 
-    state.full(params, &audio)?;
+    if language == SpeechLanguage::Chinese {
+        params.set_initial_prompt("以下是简体中文普通话的句子。");
+    }
+
+    let cancel_for_callback = cancel_flag.clone();
+    let callback: Box<dyn FnMut() -> bool> = Box::new(move || -> bool {
+        cancel_for_callback.load(Ordering::Relaxed)
+    });
+    params.set_abort_callback_safe::<Option<Box<dyn FnMut() -> bool>>, Box<dyn FnMut() -> bool>>(
+        Some(callback),
+    );
+    match state.full(params, &audio) {
+        Ok(_) => {}
+        Err(err) => {
+            if cancel_flag.load(Ordering::Relaxed) {
+                return Err(SpeechError::TranscriptionCancelled);
+            }
+            return Err(err.into());
+        }
+    }
 
     let mut transcript = String::new();
     let mut segments = Vec::new();
@@ -665,4 +803,47 @@ pub async fn transcribe_audio(
         .await
         .map(|session| TranscribeAudioResponse { session })
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cancel_transcription(state: tauri::State<'_, SpeechManager>) -> Result<bool, String> {
+    Ok(state.cancel_transcription().await)
+}
+
+#[tauri::command]
+pub async fn open_speech_session_folder(
+    state: tauri::State<'_, SpeechManager>,
+    session_id: String,
+) -> Result<(), String> {
+    let session_dir = state.sessions_dir.join(&session_id);
+
+    if !session_dir.exists() {
+        return Err(format!("会话文件夹不存在: {}", session_id));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(session_dir)
+            .spawn()
+            .map_err(|e| format!("无法打开文件夹: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(session_dir)
+            .spawn()
+            .map_err(|e| format!("无法打开文件夹: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(session_dir)
+            .spawn()
+            .map_err(|e| format!("无法打开文件夹: {}", e))?;
+    }
+
+    Ok(())
 }

@@ -34,6 +34,8 @@ const SpeechToTextPage: React.FC = () => {
   const [currentSession, setCurrentSession] = React.useState<SpeechSession | null>(null);
   const [audioLevel, setAudioLevel] = React.useState(0);
   const [recordingDuration, setRecordingDuration] = React.useState(0);
+  const [transcriptionDuration, setTranscriptionDuration] = React.useState(0);
+  const [lastTranscriptionDuration, setLastTranscriptionDuration] = React.useState<number | null>(null);
   const [isSavingTranscript, setIsSavingTranscript] = React.useState(false);
   const [audioSrc, setAudioSrc] = React.useState<string | null>(null);
   const hasMediaDevices = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices);
@@ -49,6 +51,9 @@ const SpeechToTextPage: React.FC = () => {
   const recordingStartRef = React.useRef<number | null>(null);
   const audioLoadIdRef = React.useRef(0);
   const audioUrlRef = React.useRef<string | null>(null);
+  const transcriptionStartRef = React.useRef<number | null>(null);
+  const transcriptionRafRef = React.useRef<number | null>(null);
+  const transcriptionCancelledRef = React.useRef(false);
 
   const stopMonitoring = React.useCallback(() => {
     if (rafRef.current !== null) {
@@ -116,6 +121,77 @@ const SpeechToTextPage: React.FC = () => {
     },
     [stopMonitoring],
   );
+
+  const resetTranscriptionTimer = React.useCallback(() => {
+    if (transcriptionRafRef.current !== null) {
+      cancelAnimationFrame(transcriptionRafRef.current);
+      transcriptionRafRef.current = null;
+    }
+    transcriptionStartRef.current = null;
+    setTranscriptionDuration(0);
+  }, []);
+
+  const startTranscriptionTimer = React.useCallback(() => {
+    resetTranscriptionTimer();
+    transcriptionStartRef.current = performance.now();
+
+    const update = () => {
+      if (transcriptionStartRef.current === null) {
+        return;
+      }
+      setTranscriptionDuration((performance.now() - transcriptionStartRef.current) / 1000);
+      transcriptionRafRef.current = requestAnimationFrame(update);
+    };
+
+    update();
+  }, [resetTranscriptionTimer]);
+
+  const stopTranscriptionTimer = React.useCallback(() => {
+    if (transcriptionRafRef.current !== null) {
+      cancelAnimationFrame(transcriptionRafRef.current);
+      transcriptionRafRef.current = null;
+    }
+    if (transcriptionStartRef.current !== null) {
+      const elapsed = (performance.now() - transcriptionStartRef.current) / 1000;
+      transcriptionStartRef.current = null;
+      setTranscriptionDuration(elapsed);
+      setLastTranscriptionDuration(elapsed);
+    }
+  }, []);
+
+  const beginTranscription = React.useCallback(() => {
+    transcriptionCancelledRef.current = false;
+    setError(null);
+    setTranscribing(true);
+    startTranscriptionTimer();
+  }, [startTranscriptionTimer]);
+
+  const finalizeTranscription = React.useCallback(
+    (options?: { preserveDuration?: boolean }) => {
+      const preserve = options?.preserveDuration ?? true;
+      if (preserve) {
+        stopTranscriptionTimer();
+      } else {
+        resetTranscriptionTimer();
+        setLastTranscriptionDuration(null);
+      }
+      setTranscribing(false);
+    },
+    [resetTranscriptionTimer, stopTranscriptionTimer],
+  );
+
+  const getErrorMessage = React.useCallback((value: unknown) => {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value && typeof value === 'object' && 'message' in value) {
+      const message = (value as { message?: unknown }).message;
+      if (typeof message === 'string') {
+        return message;
+      }
+    }
+    return '';
+  }, []);
 
   const prepareAudioSource = React.useCallback(async (session: SpeechSession | null) => {
     audioLoadIdRef.current += 1;
@@ -251,6 +327,11 @@ const SpeechToTextPage: React.FC = () => {
       unlisten.forEach(disposer => {
         disposer();
       });
+      if (transcriptionRafRef.current !== null) {
+        cancelAnimationFrame(transcriptionRafRef.current);
+        transcriptionRafRef.current = null;
+      }
+      transcriptionStartRef.current = null;
       stopMonitoring();
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
@@ -274,9 +355,10 @@ const SpeechToTextPage: React.FC = () => {
 
   const processRecording = React.useCallback(
     async (blob: Blob, selectedLanguage: SpeechLanguage) => {
-      setTranscribing(true);
-      setError(null);
+      beginTranscription();
       let newSessionId: string | null = null;
+      let hadError = false;
+      let wasCancelled = false;
       try {
         const base64 = await blobTo16kWavBase64(blob);
         const response = await invoke<TranscribeAudioResponse>('transcribe_audio', {
@@ -291,14 +373,84 @@ const SpeechToTextPage: React.FC = () => {
         setSessions(prev => [response.session, ...prev.filter(item => item.id !== response.session.id)]);
       } catch (invokeError) {
         console.error(invokeError);
-        setError('转写失败，请稍后重试。');
+        const message = getErrorMessage(invokeError);
+        if (message.includes('转写已取消')) {
+          wasCancelled = true;
+        } else if (message.includes('已有转写任务正在进行')) {
+          hadError = true;
+          setError('已有转写任务正在进行，请稍后重试。');
+        } else {
+          hadError = true;
+          setError('转写失败，请稍后重试。');
+        }
+        if (hadError && !wasCancelled) {
+          setLastTranscriptionDuration(null);
+        }
       } finally {
-        setTranscribing(false);
+        const cancelled = wasCancelled || transcriptionCancelledRef.current;
+        finalizeTranscription({ preserveDuration: cancelled || !hadError });
+        transcriptionCancelledRef.current = false;
         void loadSessions(newSessionId ?? undefined);
         setRecordingDuration(0);
       }
     },
-    [applySession, loadSessions],
+    [
+      applySession,
+      beginTranscription,
+      finalizeTranscription,
+      getErrorMessage,
+      loadSessions,
+    ],
+  );
+
+  const handleUploadAudio = React.useCallback(
+    async (file: File) => {
+      beginTranscription();
+      let newSessionId: string | null = null;
+      let hadError = false;
+      let wasCancelled = false;
+      try {
+        const base64 = await blobTo16kWavBase64(file);
+        const response = await invoke<TranscribeAudioResponse>('transcribe_audio', {
+          payload: {
+            audio_base64: base64,
+            language,
+          },
+        });
+
+        newSessionId = response.session.id;
+        applySession(response.session);
+        setSessions(prev => [response.session, ...prev.filter(item => item.id !== response.session.id)]);
+      } catch (invokeError) {
+        console.error(invokeError);
+        const message = getErrorMessage(invokeError);
+        if (message.includes('转写已取消')) {
+          wasCancelled = true;
+        } else if (message.includes('已有转写任务正在进行')) {
+          hadError = true;
+          setError('已有转写任务正在进行，请稍后重试。');
+        } else {
+          hadError = true;
+          setError('上传音频转写失败，请检查文件格式。');
+        }
+        if (hadError && !wasCancelled) {
+          setLastTranscriptionDuration(null);
+        }
+      } finally {
+        const cancelled = wasCancelled || transcriptionCancelledRef.current;
+        finalizeTranscription({ preserveDuration: cancelled || !hadError });
+        transcriptionCancelledRef.current = false;
+        void loadSessions(newSessionId ?? undefined);
+      }
+    },
+    [
+      language,
+      applySession,
+      beginTranscription,
+      finalizeTranscription,
+      getErrorMessage,
+      loadSessions,
+    ],
   );
 
   const handleStartRecording = React.useCallback(async () => {
@@ -352,6 +504,20 @@ const SpeechToTextPage: React.FC = () => {
     setIsRecording(false);
     setRecordingDuration(0);
   }, [stopMonitoring]);
+
+  const handleCancelTranscription = React.useCallback(async () => {
+    if (!transcribing) {
+      return;
+    }
+    transcriptionCancelledRef.current = true;
+    stopTranscriptionTimer();
+    setTranscribing(false);
+    try {
+      await invoke<boolean>('cancel_transcription');
+    } catch (invokeError) {
+      console.error(invokeError);
+    }
+  }, [stopTranscriptionTimer, transcribing]);
 
   const handleSelectSession = React.useCallback(
     (session: SpeechSession) => {
@@ -435,19 +601,29 @@ const SpeechToTextPage: React.FC = () => {
     <Box sx={{ 
       maxWidth: '100%',
       margin: '0 auto',
-      p: { xs: 2, sm: 3 },
+      p: { xs: 2, sm: 3, md: 4 },
       minHeight: '100vh',
       bgcolor: 'background.default'
     }}>
       <PageHeader
-        title="语音转写助手"
-        subtitle="使用本地 Whisper Small 模型，支持中文与英文的快速离线识别"
+        title="🎙️ 语音转写助手"
+        subtitle="使用本地模型，支持中文与英文的离线识别，耗性能"
         gradient={true}
       />
 
       {error && (
         <Box sx={{ mb: 3 }}>
-          <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>
+          <Alert 
+            severity="error" 
+            sx={{ 
+              borderRadius: 2,
+              borderLeft: '4px solid',
+              borderLeftColor: 'error.main',
+              boxShadow: 1,
+            }}
+          >
+            {error}
+          </Alert>
         </Box>
       )}
 
@@ -460,6 +636,7 @@ const SpeechToTextPage: React.FC = () => {
             onStartRecording={handleStartRecording}
             onStopRecording={handleStopRecording}
             onEnsureModel={ensureModel}
+            onUploadAudio={handleUploadAudio}
             modelReady={modelReady}
             disabled={!hasMediaDevices}
             progress={modelProgress}
@@ -467,6 +644,9 @@ const SpeechToTextPage: React.FC = () => {
             ensuringModel={ensuringModel}
             audioLevel={audioLevel}
             recordingDuration={recordingDuration}
+            onStopTranscription={handleCancelTranscription}
+            transcriptionDuration={transcriptionDuration}
+            lastTranscriptionDuration={lastTranscriptionDuration}
           />
         </CardContainer>
 
@@ -478,7 +658,7 @@ const SpeechToTextPage: React.FC = () => {
           alignItems: 'stretch',
         }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <CardContainer minHeight="500px">
+            <CardContainer minHeight="600px">
               <TranscriptView
                 language={transcriptLanguage}
                 transcript={transcriptDraft}
@@ -495,7 +675,7 @@ const SpeechToTextPage: React.FC = () => {
           </Box>
 
           <Box sx={{ width: { xs: '100%', lg: '420px' }, flexShrink: 0 }}>
-            <CardContainer minHeight="500px">
+            <CardContainer minHeight="600px">
               <SessionHistory
                 sessions={sessions}
                 selectedSessionId={selectedSessionId}
