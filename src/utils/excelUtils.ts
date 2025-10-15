@@ -490,7 +490,6 @@ export const splitTableByColumn = (
   editedRows: EditedRowData,
   existingSheets: SheetData[]
 ): SheetData[] => {
-  const headerIndex = getHeaderRowIndex(sheetData);
   const headers = getHeaderRow(sheetData);
   const dataRows = getDataRows(sheetData);
   const rowsWithEdits = getRowsWithEdits(dataRows, currentSheet, editedRows);
@@ -581,7 +580,9 @@ export const splitTableByColumn = (
       matchingRowIndices.forEach((dataRowIdx, i) => {
         const oldIdx0 = dataRowIdx + 1; // 原数组是 0-based 对应行号-1
         const newIdx0 = i + 1; // 新数组 0-based（表头在 0）
-        newProperties.rows[newIdx0] = sheetData.properties!.rows[oldIdx0];
+        if (sheetData.properties?.rows?.[oldIdx0]) {
+          newProperties.rows[newIdx0] = sheetData.properties.rows[oldIdx0];
+        }
       });
     }
     // 合并单元格重映射（仅当所有涉及的原始行都在映射中，且映射后仍连续）
@@ -1617,14 +1618,20 @@ const applyComments = (worksheet: ExcelJS.Worksheet, comments: Record<string, { 
     }
     const cell = worksheet.getCell(row, column);
     if (!comment || typeof comment.text === 'undefined') {
-      cell.note = undefined;
+      delete (cell as any).note;
       return;
     }
+    const notePayload: any = {
+      texts: [
+        {
+          text: typeof comment.text === 'string' ? comment.text : String(comment.text ?? '')
+        }
+      ]
+    };
     if (comment.author) {
-      cell.note = { text: comment.text, author: comment.author } as any;
-    } else {
-      cell.note = comment.text as any;
+      notePayload.author = comment.author;
     }
+    cell.note = notePayload;
   });
 };
 

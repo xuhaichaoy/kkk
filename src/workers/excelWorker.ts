@@ -126,6 +126,87 @@ const columnLettersToNumber = (letters: string): number => {
   return result;
 };
 
+const flattenNoteTextParts = (segments: any): string => {
+  if (segments === null || segments === undefined) {
+    return '';
+  }
+
+  if (typeof segments === 'string') {
+    return segments;
+  }
+
+  if (Array.isArray(segments)) {
+    return segments
+      .map(part => {
+        if (!part) {
+          return '';
+        }
+        if (typeof part === 'string') {
+          return part;
+        }
+        if (typeof part === 'object') {
+          if (typeof part.text === 'string') {
+            return part.text;
+          }
+          if (Array.isArray(part.text)) {
+            return flattenNoteTextParts(part.text);
+          }
+        }
+        return '';
+      })
+      .join('');
+  }
+
+  if (typeof segments === 'object') {
+    if (typeof segments.text === 'string') {
+      return segments.text;
+    }
+    if (Array.isArray(segments.text)) {
+      return flattenNoteTextParts(segments.text);
+    }
+  }
+
+  return '';
+};
+
+const extractCommentText = (note: any): string => {
+  if (note === null || note === undefined) {
+    return '';
+  }
+
+  if (typeof note === 'string') {
+    return note;
+  }
+
+  if (Array.isArray(note)) {
+    return flattenNoteTextParts(note);
+  }
+
+  if (typeof note === 'object') {
+    if (Array.isArray((note as any).texts)) {
+      const textFromTexts = flattenNoteTextParts((note as any).texts);
+      if (textFromTexts) {
+        return textFromTexts;
+      }
+    }
+
+    const fromTextProp = flattenNoteTextParts((note as any).text);
+    if (fromTextProp) {
+      return fromTextProp;
+    }
+
+    if (typeof (note as any).plainText === 'string') {
+      return (note as any).plainText;
+    }
+  }
+
+  try {
+    return String(note);
+  } catch (_) {
+    return '';
+  }
+};
+
 const parseCellAddress = (address: string | undefined | null): { row: number; column: number } | null => {
   if (!address) {
     return null;
@@ -428,21 +509,16 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
           }
 
           const note = (cell as any).note;
-          if (note) {
+          if (note !== undefined && note !== null) {
             try {
-              if (typeof note === 'string') {
-                commentMap[cellAddress] = { text: note };
-              } else if (typeof note === 'object') {
-                const text = typeof note.text === 'string'
-                  ? note.text
-                  : Array.isArray(note.text)
-                    ? note.text.map((t: any) => (typeof t === 'string' ? t : t.text || '')).join('')
-                    : '';
-                commentMap[cellAddress] = {
-                  text,
-                  author: note.author
-                };
+              const commentText = extractCommentText(note);
+              const entry: { text: string; author?: string } = {
+                text: commentText
+              };
+              if (note && typeof note === 'object' && typeof note.author === 'string') {
+                entry.author = note.author;
               }
+              commentMap[cellAddress] = entry;
             } catch (_) {
               commentMap[cellAddress] = { text: String(note) };
             }
@@ -473,7 +549,7 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
       // 行高
       properties.rows = [];
       worksheet.eachRow((row, rowNumber) => {
-        if (row.height) {
+        if (row.height && properties.rows) {
           properties.rows[rowNumber - 1] = {
             height: row.height,
             hidden: row.hidden
@@ -515,14 +591,19 @@ async function parseExcel(file: ArrayBuffer): Promise<ExcelWorkbook> {
         } catch (_) {
           properties.views = worksheet.views as any;
         }
-        const frozenView = worksheet.views.find(view => view.state === 'frozen' || view.xSplit || view.ySplit);
+        const frozenView = worksheet.views.find(view => {
+          const v = view as any;
+          return v.state === 'frozen' || v.xSplit || v.ySplit;
+        });
         if (frozenView) {
+          const v = frozenView as any;
+          const state = v.state === 'frozen' || v.state === 'split' ? v.state : undefined;
           properties.freezePanes = {
-            state: frozenView.state,
-            xSplit: frozenView.xSplit,
-            ySplit: frozenView.ySplit,
-            topLeftCell: frozenView.topLeftCell,
-            activeCell: frozenView.activeCell
+            state: state,
+            xSplit: v.xSplit,
+            ySplit: v.ySplit,
+            topLeftCell: v.topLeftCell,
+            activeCell: v.activeCell
           };
         }
       }
