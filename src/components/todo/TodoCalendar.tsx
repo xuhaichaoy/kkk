@@ -15,8 +15,10 @@ import {
 } from 'date-fns';
 import {
   Box,
-  Chip,
+  Button,
   IconButton,
+  MenuItem,
+  Select,
   Stack,
   Tooltip,
   Typography,
@@ -24,9 +26,10 @@ import {
   useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import AddIcon from '@mui/icons-material/Add';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import CircleIcon from '@mui/icons-material/Circle';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import type { TodoTask } from '../../stores/todoStore';
 import { compareByDueAndPriority } from '../../utils/todoUtils';
 
@@ -43,7 +46,7 @@ const dayLabels = ['日', '一', '二', '三', '四', '五', '六'];
 const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSelectDate, onMonthChange }) => {
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
-  const cellHeight = isSmallScreen ? 124 : 156;
+  const baseCellHeight = isSmallScreen ? 124 : 156;
   const calendarMatrix = useMemo(() => {
     const start = startOfWeek(startOfMonth(month), { weekStartsOn: 0 });
     const end = endOfWeek(endOfMonth(month), { weekStartsOn: 0 });
@@ -59,6 +62,9 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
     }
     return weeks;
   }, [month]);
+
+  const weeksCount = calendarMatrix.length;
+  const enforceBaseHeight = weeksCount <= 5;
 
   const tasksByDay = useMemo(() => {
     const map = new Map<string, TodoTask[]>();
@@ -101,11 +107,10 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
   const renderDayCell = (date: Date) => {
     const key = format(date, 'yyyy-MM-dd');
     const dayTasks = tasksByDay.get(key) ?? [];
-    const completed = dayTasks.filter(task => task.completed).length;
-    const pending = dayTasks.length - completed;
     const isCurrentMonth = isSameMonth(date, month);
     const isSelected = isSameDay(selectedDate, date);
     const isCurrent = isToday(date);
+    const hasTasks = dayTasks.length > 0;
 
     return (
       <Box
@@ -113,100 +118,153 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
         onClick={() => onSelectDate(date)}
         sx={{
           position: 'relative',
-          p: 1,
-          height: cellHeight,
+          p: 0.8,
+          height: '100%',
+          minHeight: enforceBaseHeight ? baseCellHeight : undefined,
           width: '100%',
-          borderRadius: 2,
-          border: '1px solid',
-          borderColor: isSelected ? 'primary.main' : 'divider',
-          backgroundColor: isSelected ? 'primary.main' + '10' : 'background.paper',
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: 'background.paper',
           transition: 'all 0.2s ease',
           cursor: 'pointer',
-          opacity: isCurrentMonth ? 1 : 0.35,
+          opacity: isCurrentMonth ? 1 : 0.4,
           '&:hover': {
-            borderColor: 'primary.main',
-            boxShadow: (theme) => theme.shadows[2],
+            backgroundColor: alpha(theme.palette.primary.main, 0.04),
           },
         }}
       >
-        <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: isSelected ? 700 : 500,
-                color: isCurrent ? 'primary.main' : 'text.primary',
-              }}
-            >
-              {format(date, 'd')}
-            </Typography>
-            {isCurrent && <Chip size="small" label="今天" color="primary" />}
+        <Stack spacing={0.3} sx={{ height: '100%', width: '100%' }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              {isCurrent ? (
+                <Box
+                  sx={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    backgroundColor: 'primary.main',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontWeight: 600,
+                      color: '#fff',
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    {format(date, 'd')}
+                  </Typography>
+                </Box>
+              ) : (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: isSelected ? 600 : 400,
+                    color: 'text.primary',
+                    fontSize: '0.875rem',
+                  }}
+                >
+                  {format(date, 'd')}
+                </Typography>
+              )}
+            </Box>
+            {hasTasks && !isCurrent && (
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: 'error.main',
+                  mt: 0.5,
+                }}
+              />
+            )}
           </Stack>
-          <Stack spacing={0.6} alignItems="flex-start" sx={{ flex: 1, width: '100%' }}>
+          <Stack spacing={0.3} alignItems="flex-start" sx={{ flex: 1, width: '100%', overflow: 'hidden' }}>
             {dayTasks
               .sort((a, b) => {
                 const orderA = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
                 const orderB = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
                 return orderA - orderB;
               })
-              .slice(0, 2)
+              .slice(0, 4)
               .map(task => {
-                const paletteKey: 'success' | 'error' | 'warning' | 'info' = task.completed
-                  ? 'success'
-                  : task.priority === 'high'
-                    ? 'error'
-                    : task.priority === 'medium'
-                      ? 'warning'
-                      : 'info';
+                const getTaskColor = () => {
+                  if (task.completed) return '#4caf50';
+                  if (task.priority === 'high') return '#ef5350';
+                  if (task.priority === 'medium') return '#ffa726';
+                  return '#42a5f5';
+                };
+                
+                const getTaskBgColor = () => {
+                  if (task.completed) return alpha('#4caf50', 0.12);
+                  if (task.priority === 'high') return alpha('#ef5350', 0.12);
+                  if (task.priority === 'medium') return alpha('#ffa726', 0.12);
+                  return alpha('#42a5f5', 0.12);
+                };
+
+                const taskTime = task.dueDate ? format(new Date(task.dueDate), 'HH:mm') : '';
 
                 return (
-                  <Stack
-                    key={task.id}
-                    direction="row"
-                    alignItems="center"
-                    spacing={0.8}
-                    sx={{
-                      px: 1,
-                      py: 0.35,
-                      borderRadius: 1.5,
-                      maxWidth: '100%',
-                      backgroundColor: (theme) => alpha(theme.palette[paletteKey].main, 0.12),
-                    }}
-                  >
-                    <CircleIcon sx={{ fontSize: 11, color: `${paletteKey}.main` }} />
-                    <Tooltip title={task.title} placement="top" arrow disableInteractive>
+                  <Tooltip key={task.id} title={task.title} placement="top" arrow disableInteractive>
+                    <Box
+                      sx={{
+                        width: '100%',
+                        px: 0.8,
+                        py: 0.3,
+                        borderRadius: 0.8,
+                        backgroundColor: getTaskBgColor(),
+                        borderLeft: `3px solid ${getTaskColor()}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                      }}
+                    >
                       <Typography
                         variant="caption"
                         sx={{
-                          maxWidth: isSmallScreen ? 120 : 170,
+                          flex: 1,
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
-                          display: 'block',
-                          fontWeight: 600,
+                          fontSize: '0.7rem',
+                          fontWeight: 500,
+                          color: 'text.primary',
                         }}
                       >
                         {task.title}
                       </Typography>
-                    </Tooltip>
-                  </Stack>
+                      {taskTime && taskTime !== '00:00' && (
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            fontSize: '0.65rem',
+                            color: 'text.secondary',
+                            fontWeight: 400,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {taskTime}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Tooltip>
                 );
               })}
-          </Stack>
-          {dayTasks.length > 2 && (
-            <Typography variant="caption" color="text.secondary">
-              +{dayTasks.length - 2} 更多
-            </Typography>
-          )}
-          <Stack direction="row" spacing={1}>
-            {pending > 0 && (
-              <Typography variant="caption" color="warning.main">
-                ● {pending}
-              </Typography>
-            )}
-            {completed > 0 && (
-              <Typography variant="caption" color="success.main">
-                ✓ {completed}
+            {dayTasks.length > 4 && (
+              <Typography
+                variant="caption"
+                sx={{
+                  fontSize: '0.7rem',
+                  color: 'text.secondary',
+                  pl: 0.8,
+                }}
+              >
+                +{dayTasks.length - 4}
               </Typography>
             )}
           </Stack>
@@ -218,92 +276,198 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
   return (
     <Box
       sx={{
-        borderRadius: 4,
-        p: { xs: 2.5, sm: 3 },
-        height: '100%',
+        height: 'calc(100vh)', // 减去Layout的padding
         width: '100%',
-        minWidth: 0,
-        maxWidth: '100%',
-        flex: 1,
-        background: theme.palette.mode === 'light'
-          ? 'linear-gradient(180deg, #fdfdfd 0%, #f5f8ff 100%)'
-          : theme.palette.background.paper,
-        border: '1px solid',
-        borderColor: 'divider',
-        boxShadow: '0 20px 45px -28px rgba(44,64,97,0.45)',
         display: 'flex',
         flexDirection: 'column',
-        gap: { xs: 2, sm: 2.5 },
+        backgroundColor: 'background.default',
+        // margin: '-24px', // 抵消Container的padding
       }}
     >
+      {/* 顶部工具栏 */}
       <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        alignItems={{ xs: 'flex-start', sm: 'center' }}
+        direction="row"
+        alignItems="center"
         justifyContent="space-between"
-        spacing={{ xs: 2, sm: 0 }}
+        sx={{
+          px: 3,
+          py: 2,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+        }}
       >
-        <Stack spacing={0.5}>
-          <Typography variant="h4" fontWeight={600}>
-            {format(month, 'yyyy年 MMM')}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            点击日期查看当天任务。
-          </Typography>
-        </Stack>
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Typography variant="h5" fontWeight={600}>
+          {format(month, 'MMMM yyyy')}
+        </Typography>
+        
+        <Stack direction="row" spacing={1.5} alignItems="center">
           <IconButton
             size="small"
-            sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1.5,
+              width: 36,
+              height: 36,
+            }}
+          >
+            <AddIcon fontSize="small" />
+          </IconButton>
+          
+          <Select
+            value="month"
+            size="small"
+            sx={{
+              minWidth: 100,
+              height: 36,
+              borderRadius: 1.5,
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderColor: 'divider',
+              },
+            }}
+          >
+            <MenuItem value="month">Month</MenuItem>
+            <MenuItem value="week">Week</MenuItem>
+            <MenuItem value="day">Day</MenuItem>
+          </Select>
+          
+          <IconButton
+            size="small"
             onClick={() => onMonthChange(addMonths(month, -1))}
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1.5,
+              width: 36,
+              height: 36,
+            }}
           >
             <ChevronLeftIcon fontSize="small" />
           </IconButton>
+          
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => onMonthChange(new Date())}
+            sx={{
+              height: 36,
+              borderRadius: 1.5,
+              textTransform: 'none',
+              fontWeight: 500,
+              borderColor: 'divider',
+              color: 'text.primary',
+            }}
+          >
+            Today
+          </Button>
+          
           <IconButton
             size="small"
-            sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}
             onClick={() => onMonthChange(addMonths(month, 1))}
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1.5,
+              width: 36,
+              height: 36,
+            }}
           >
             <ChevronRightIcon fontSize="small" />
+          </IconButton>
+          
+          <IconButton
+            size="small"
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1.5,
+              width: 36,
+              height: 36,
+            }}
+          >
+            <MoreHorizIcon fontSize="small" />
           </IconButton>
         </Stack>
       </Stack>
 
+      {/* 星期标题 */}
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-          gap: { xs: 1, sm: 1.2 },
-          textAlign: 'center',
-          width: '100%',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          backgroundColor: 'background.paper',
         }}
       >
         {dayLabels.map(label => (
-          <Box key={label} sx={{ minWidth: 0, width: '100%' }}>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 600 }}>
+          <Box
+            key={label}
+            sx={{
+              py: 1.5,
+              textAlign: 'center',
+              borderRight: '1px solid',
+              borderColor: 'divider',
+              '&:last-child': {
+                borderRight: 'none',
+              },
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 500,
+                color: 'text.secondary',
+                fontSize: '0.875rem',
+              }}
+            >
               {label}
             </Typography>
           </Box>
         ))}
       </Box>
 
-      <Stack spacing={1.2} sx={{ flex: 1, width: '100%' }}>
-        {calendarMatrix.map(week => {
+      {/* 日历网格 */}
+      <Box
+        sx={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {calendarMatrix.map((week, weekIndex) => {
           const weekKey = format(week[0], 'yyyy-MM-dd');
           return (
             <Box
               key={weekKey}
               sx={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                gap: { xs: 1, sm: 1.2 },
-                width: '100%',
+                gridTemplateColumns: 'repeat(7, 1fr)',
+                flex: 1,
+                minHeight: enforceBaseHeight ? baseCellHeight : 0,
+                borderBottom: '1px solid',
+                borderColor: 'divider',
+                '&:last-of-type': {
+                  borderBottom: '1px solid',
+                },
               }}
             >
-              {week.map(date => renderDayCell(date))}
+              {week.map((date, dateIndex) => (
+                <Box
+                  key={format(date, 'yyyy-MM-dd')}
+                  sx={{
+                    borderRight: dateIndex === 6 ? 'none' : '1px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  {renderDayCell(date)}
+                </Box>
+              ))}
             </Box>
           );
         })}
-      </Stack>
+      </Box>
     </Box>
   );
 };

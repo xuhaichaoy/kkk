@@ -1,6 +1,7 @@
 import { createTheme } from '@mui/material/styles';
 
 export const theme = createTheme({
+  spacing: 6,
   palette: {
     primary: {
       main: '#2563eb',
@@ -19,20 +20,37 @@ export const theme = createTheme({
   },
   typography: {
     fontFamily: '"Plus Jakarta Sans Variable", sans-serif',
+    fontSize: 14,
+    body1: {
+      fontSize: '0.95rem',
+      lineHeight: 1.5,
+    },
+    body2: {
+      fontSize: '0.9rem',
+      lineHeight: 1.45,
+    },
+    subtitle1: {
+      fontSize: '1rem',
+      fontWeight: 600,
+    },
+    subtitle2: {
+      fontSize: '0.9rem',
+      fontWeight: 500,
+    },
     h1: {
-      fontSize: '2.5rem',
+      fontSize: '2.125rem',
       fontWeight: 700,
     },
     h2: {
-      fontSize: '2rem',
-      fontWeight: 600,
-    },
-    h3: {
       fontSize: '1.75rem',
       fontWeight: 600,
     },
+    h3: {
+      fontSize: '1.6rem',
+      fontWeight: 600,
+    },
     h4: {
-      fontSize: '1.5rem',
+      fontSize: '1.45rem',
       fontWeight: 600,
     },
     h5: {
@@ -40,7 +58,7 @@ export const theme = createTheme({
       fontWeight: 600,
     },
     h6: {
-      fontSize: '1rem',
+      fontSize: '0.95rem',
       fontWeight: 600,
     },
   },

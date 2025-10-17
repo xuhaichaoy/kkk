@@ -8,15 +8,13 @@ import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import {
-	Chip,
+	Box,
 	IconButton,
-	Paper,
 	Stack,
-	Tooltip,
 	Typography,
 	useTheme,
 } from "@mui/material";
-import { differenceInHours, format, isBefore, startOfDay } from "date-fns";
+import { format } from "date-fns";
 import type { FC } from "react";
 import React, { useMemo, useState } from "react";
 import type { TodoStatus, TodoTask } from "../../stores/todoStore";
@@ -40,20 +38,10 @@ const columns: Array<{
 	{ key: "completed", title: "已完成", description: "" },
 ];
 
-const priorityColorMap: Record<
-	string,
-	"default" | "info" | "warning" | "error" | "success"
-> = {
-	high: "error",
-	medium: "warning",
-	low: "info",
-};
-
 const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 	tasks,
 	onStatusChange,
 	onEditTask,
-	onLogTime,
 }) => {
 	const theme = useTheme();
 	const [collapsedColumns, setCollapsedColumns] = useState<Set<TodoStatus>>(
@@ -128,173 +116,108 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 		onStatusChange(draggableId, nextStatus);
 	};
 
+	const getPriorityIcon = (priority: string) => {
+		const colors = {
+			high: "#ef4444",
+			medium: "#f97316",
+			low: "#3b82f6",
+		};
+		const labels = {
+			high: "高",
+			medium: "中",
+			low: "低",
+		};
+		return (
+			<Box
+				sx={{
+					width: 28,
+					height: 28,
+					borderRadius: "50%",
+					backgroundColor: colors[priority as keyof typeof colors],
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "center",
+					color: "white",
+					fontSize: "0.75rem",
+					fontWeight: 600,
+				}}
+			>
+				{labels[priority as keyof typeof labels]}
+			</Box>
+		);
+	};
+
 	const renderTaskCard = (task: TodoTask, index: number) => {
 		const dueDate = task.dueDate ? new Date(task.dueDate) : null;
 		const isDueValid =
 			dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
-		const now = new Date();
-		const isOverdue = Boolean(
-			isDueValid && !task.completed && isBefore(isDueValid, now),
-		);
-		const hoursUntilDue = isDueValid
-			? differenceInHours(isDueValid, now)
-			: null;
-		const isDueSoon = Boolean(
-			isDueValid &&
-				!task.completed &&
-				!isOverdue &&
-				hoursUntilDue !== null &&
-				hoursUntilDue <= 24,
-		);
 
 		return (
 			<Draggable key={task.id} draggableId={task.id} index={index}>
 				{(provided, snapshot) => (
-					<Paper
+					<Box
 						ref={provided.innerRef}
 						{...provided.draggableProps}
 						{...provided.dragHandleProps}
-						elevation={snapshot.isDragging ? 8 : 1}
 						onClick={() => onEditTask(task)}
 						sx={{
-							p: 1.2,
+							p: 1.5,
 							borderRadius: 2,
 							cursor: "grab",
-							boxShadow: snapshot.isDragging
-								? theme.shadows[8]
-								: theme.shadows[1],
 							border: "1px solid",
-							borderColor: snapshot.isDragging ? "primary.main" : "divider",
-							backgroundColor: snapshot.isDragging
-								? theme.palette.background.paper
+							borderColor: snapshot.isDragging
+								? "primary.main"
 								: theme.palette.mode === "light"
-									? "#fff"
-									: theme.palette.background.default,
-							transition: "box-shadow 0.2s ease, transform 0.2s ease",
+									? "rgba(229, 231, 235, 1)"
+									: "divider",
+							backgroundColor:
+								theme.palette.mode === "light" ? "#ffffff" : "background.paper",
+							transition: "all 0.2s ease",
+							"&:hover": {
+								boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+							},
 						}}
 					>
-						<Stack spacing={1}>
-							<Stack spacing={0.3}>
-								<Typography
-									variant="body2"
-									fontWeight={600}
-									sx={{ wordBreak: "break-word", fontSize: "0.875rem" }}
-								>
-									{task.title}
-								</Typography>
-								{/* {task.description && (
-									<Typography
-										variant="body2"
-										color="text.secondary"
-										sx={{ wordBreak: "break-word" }}
-									>
-										{task.description}
-									</Typography>
-								)} */}
-							</Stack>
-
-							<Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-								<Chip
-									label={
-										task.priority === "high"
-											? "高"
-											: task.priority === "medium"
-												? "中"
-												: "低"
-									}
-									size="small"
-									color={priorityColorMap[task.priority]}
-									sx={{ fontSize: "0.75rem", height: "20px" }}
-								/>
-								{task.category && (
-									<Chip 
-										label={task.category} 
-										size="small" 
-										variant="outlined" 
-										sx={{ fontSize: "0.75rem", height: "20px" }}
-									/>
-								)}
-								{isOverdue && <Chip label="逾期" size="small" color="error" sx={{ fontSize: "0.75rem", height: "20px" }} />}
-								{isDueSoon && (
-									<Chip label="即将到期" size="small" color="warning" sx={{ fontSize: "0.75rem", height: "20px" }} />
-								)}
-								{isDueValid && (
-									<Chip
-										label={`截止 ${format(isDueValid, "MM-dd HH:mm")}`}
-										size="small"
-										variant="outlined"
-										color={isOverdue ? "error" : "primary"}
-										sx={{ fontSize: "0.75rem", height: "20px" }}
-									/>
-								)}
-							</Stack>
-
-							{task.tags.length > 0 && (
-								<Stack direction="row" spacing={0.4} flexWrap="wrap" useFlexGap>
-									{task.tags.slice(0, 3).map((tag) => (
-										<Chip
-											key={tag}
-											label={tag}
-											size="small"
-											variant="outlined"
-											sx={{ fontSize: "0.75rem", height: "20px" }}
-										/>
-									))}
-									{task.tags.length > 3 && (
-										<Chip
-											label={`+${task.tags.length - 3}`}
-											size="small"
-											variant="outlined"
-											sx={{ fontSize: "0.75rem", height: "20px" }}
-										/>
-									)}
-								</Stack>
-							)}
-
-				<Stack
-					direction="row"
-					justifyContent="space-between"
-					alignItems="center"
-				>
-					<Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
-						创建 {format(startOfDay(new Date(task.createdAt)), "MM-dd")}
-					</Typography>
-					<Stack direction="row" spacing={0.5} alignItems="center">
-						{onLogTime && (
-							<Tooltip title="登记用时" arrow>
-								<IconButton
-									size="small"
-									onClick={(event) => {
-										event.stopPropagation();
-										onLogTime(task);
-									}}
-								>
-									<AccessTimeIcon fontSize="small" />
-								</IconButton>
-							</Tooltip>
-						)}
-						<Tooltip
-							title={task.notes ? task.notes : "点击查看详情"}
-							placement="top"
-							arrow
-							disableInteractive
-						>
+						<Stack spacing={1.5}>
 							<Typography
-								variant="caption"
-								color="primary.main"
-								sx={{ cursor: "pointer", fontSize: "0.7rem" }}
-								onClick={(event) => {
-									event.stopPropagation();
-									onEditTask(task);
+								variant="body2"
+								sx={{
+									wordBreak: "break-word",
+									fontSize: "0.875rem",
+									lineHeight: 1.5,
 								}}
 							>
-								查看详情
+								{task.title}
 							</Typography>
-						</Tooltip>
-					</Stack>
-				</Stack>
+
+							<Stack
+								direction="row"
+								justifyContent="space-between"
+								alignItems="center"
+							>
+								<Stack direction="row" spacing={1} alignItems="center">
+									{getPriorityIcon(task.priority)}
+									{isDueValid && (
+										<Typography
+											variant="caption"
+											sx={{
+												color: "text.secondary",
+												fontSize: "0.75rem",
+											}}
+										>
+											截止 {format(isDueValid, "MM-dd HH:mm")}
+										</Typography>
+									)}
+								</Stack>
+								<AccessTimeIcon
+									sx={{
+										fontSize: 16,
+										color: "text.disabled",
+									}}
+								/>
+							</Stack>
 						</Stack>
-					</Paper>
+					</Box>
 				)}
 			</Draggable>
 		);
@@ -302,13 +225,37 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 
 	return (
 		<DragDropContext onDragEnd={handleDragEnd}>
-			<Stack
-				direction="row"
-				spacing={1}
-				alignItems="flex-start"
-				sx={{ overflowX: "auto", pb: 1 }}
+			<Box
+				sx={{
+					width: "100%",
+					height: "100%",
+					overflowX: "auto",
+					overflowY: "hidden",
+					"&::-webkit-scrollbar": {
+						height: 8,
+					},
+					"&::-webkit-scrollbar-track": {
+						backgroundColor: "transparent",
+					},
+					"&::-webkit-scrollbar-thumb": {
+						backgroundColor: theme.palette.mode === "light" ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.2)",
+						borderRadius: 4,
+						"&:hover": {
+							backgroundColor: theme.palette.mode === "light" ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.3)",
+						},
+					},
+				}}
 			>
-				{columns.map((column) => {
+				<Stack
+					direction="row"
+					spacing={2}
+					alignItems="stretch"
+					sx={{ 
+						minWidth: "max-content",
+						height: "100%",
+					}}
+				>
+					{columns.map((column) => {
 					const columnTasks = grouped.get(column.key) ?? [];
 					const isCollapsed = collapsedColumns.has(column.key);
 					if (isCollapsed) {
@@ -317,12 +264,12 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 								key={column.key}
 								spacing={1.2}
 								sx={{
-									minWidth: 60,
-									maxWidth: 72,
+									minWidth: 48,
+									maxWidth: 60,
 									flex: "0 0 auto",
 								}}
 							>
-								<Paper
+								<Box
 									sx={{
 										height: "100%",
 										display: "flex",
@@ -333,9 +280,8 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 										borderRadius: 2,
 										backgroundColor:
 											theme.palette.mode === "light"
-												? "rgba(255,255,255,0.92)"
+												? "rgba(249, 250, 251, 1)"
 												: theme.palette.background.paper,
-										boxShadow: "0 8px 20px rgba(15, 23, 42, 0.06)",
 										border: "1px solid",
 										borderColor: "divider",
 									}}
@@ -348,118 +294,116 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 											<ChevronRightIcon fontSize="small" />
 										</IconButton>
 										<Typography
-											variant="subtitle2"
-											fontWeight={700}
+											variant="caption"
+											fontWeight={600}
 											sx={{
 												writingMode: "vertical-rl",
 												textOrientation: "mixed",
-												letterSpacing: "0.12em",
+												letterSpacing: "0.05em",
 											}}
 										>
 											{column.title}
 										</Typography>
-										<Typography variant="caption" color="text.secondary">
+										<Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem" }}>
 											{columnTasks.length}
 										</Typography>
 									</Stack>
-								</Paper>
+								</Box>
 							</Stack>
 						);
 					}
 
 					return (
-						<Stack
+						<Box
 							key={column.key}
-							spacing={1}
 							sx={{
-							  width: 300,
 								flex: "0 0 auto",
+								width: 320,
+								height: "100%",
+								display: "flex",
+								flexDirection: "column",
 							}}
 						>
-							<Paper
-								sx={{
-									p: 1,
-									borderRadius: 2,
-									backgroundColor:
-										theme.palette.mode === "light"
-											? "rgba(255,255,255,0.92)"
-											: theme.palette.background.paper,
-									boxShadow: "0 4px 12px rgba(15, 23, 42, 0.06)",
-									border: "1px solid",
-									borderColor: "divider",
-								}}
+							<Stack
+								direction="row"
+								alignItems="center"
+								justifyContent="space-between"
+								sx={{ px: 1, pb: 2 }}
 							>
-								<Stack spacing={1}>
-									<Stack
-										direction="row"
-										justifyContent="space-between"
-										alignItems="center"
+								<Stack direction="row" spacing={1} alignItems="center">
+									<Typography
+										variant="body2"
+										fontWeight={600}
+										sx={{ fontSize: "0.875rem" }}
 									>
-										<Stack spacing={0.3}>
-											<Typography variant="subtitle1" fontWeight={700}>
-												{column.title}
-											</Typography>
-											<Typography variant="caption" color="text.secondary">
-												{column.description}
-											</Typography>
-										</Stack>
-										<Stack direction="row" spacing={0.5} alignItems="center">
-											<Chip
-												label={`${columnTasks.length}`}
-												size="small"
-												color="primary"
-												variant="outlined"
-											/>
-											<IconButton
-												size="small"
-												onClick={() => handleToggleColumn(column.key)}
-											>
-												<ChevronLeftIcon fontSize="small" />
-											</IconButton>
-										</Stack>
-									</Stack>
-
-									<Droppable droppableId={column.key}>
-										{(provided, snapshot) => (
-											<Stack
-												ref={provided.innerRef}
-												spacing={0.8}
-												{...provided.droppableProps}
-												sx={{
-													minHeight: 100,
-													maxHeight: "62vh",
-													overflowY: "auto",
-													px: 0.3,
-													py: 0.3,
-													borderRadius: 1.5,
-													backgroundColor: snapshot.isDraggingOver
-														? theme.palette.mode === "light"
-															? "rgba(59, 130, 246, 0.08)"
-															: "rgba(59, 130, 246, 0.14)"
-														: "transparent",
-												}}
-											>
-												{columnTasks.map(renderTaskCard)}
-												{provided.placeholder}
-												{columnTasks.length === 0 &&
-													!snapshot.isDraggingOver && (
-														<Typography
-															variant="caption"
-															color="text.disabled"
-															sx={{ textAlign: "center", py: 4 }}
-														>
-															暂无任务，拖拽任务到此列
-														</Typography>
-													)}
-											</Stack>
-										)}
-									</Droppable>
+										{column.title}
+									</Typography>
+									<Typography
+										variant="body2"
+										color="text.secondary"
+										sx={{ fontSize: "0.875rem" }}
+									>
+										{columnTasks.length}
+									</Typography>
 								</Stack>
-							</Paper>
-						</Stack>
+								<IconButton
+									size="small"
+									onClick={() => handleToggleColumn(column.key)}
+									sx={{
+										width: 24,
+										height: 24,
+										"&:hover": {
+											backgroundColor: "action.hover",
+										},
+									}}
+								>
+									<ChevronLeftIcon sx={{ fontSize: 18 }} />
+								</IconButton>
+							</Stack>
+
+							<Droppable droppableId={column.key}>
+								{(provided, snapshot) => (
+									<Stack
+										ref={provided.innerRef}
+										spacing={1.5}
+										{...provided.droppableProps}
+										sx={{
+											flex: 1,
+											overflowY: "auto",
+											px: 1,
+											py: 1,
+											borderRadius: 2,
+											backgroundColor: snapshot.isDraggingOver
+												? theme.palette.mode === "light"
+													? "rgba(219, 234, 254, 0.5)"
+													: "rgba(59, 130, 246, 0.1)"
+												: "transparent",
+											transition: "background-color 0.2s ease",
+										}}
+									>
+											{columnTasks.map(renderTaskCard)}
+											{provided.placeholder}
+											{columnTasks.length === 0 && !snapshot.isDraggingOver && (
+												<Typography
+													variant="caption"
+													color="text.disabled"
+													sx={{
+														textAlign: "center",
+														py: 6,
+														fontSize: "0.75rem",
+													}}
+												>
+													暂无任务，拖拽任务到此列
+												</Typography>
+											)}
+										</Stack>
+									)}
+								</Droppable>
+						</Box>
 					);
 				})}
 			</Stack>
+		</Box>
 		</DragDropContext>
 	);
 };

@@ -1,11 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 import Layout from '../components/Layout';
-import ExcelPage from '../pages/ExcelPage';
+import TodoPage from '../pages/TodoPage';
 
 export const Route = createFileRoute('/')({
   component: () => (
     <Layout>
-      <ExcelPage />
+      <TodoPage />
     </Layout>
   ),
 });

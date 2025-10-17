@@ -88,7 +88,6 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 		differenceInCalendarDays(timelineBounds.end, timelineBounds.start),
 		1,
 	);
-	const timelineWidth = Math.max(totalDays * DAY_WIDTH, 560);
 
 	const groupedTasks = useMemo(() => {
 		return STATUS_CONFIG.map((config) => ({
@@ -104,15 +103,15 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 				<Box
 					key={date.toISOString()}
 					sx={{
-						width: DAY_WIDTH,
-						minWidth: DAY_WIDTH,
+						flex: 1,
 						textAlign: "center",
 						borderRight: "1px dashed",
 						borderColor: "divider",
 						py: 0.5,
+						minWidth: 0,
 					}}
 				>
-					<Typography variant="caption" color="text.secondary">
+					<Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
 						{format(date, "MM/dd")}
 					</Typography>
 				</Box>
@@ -141,8 +140,8 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 			differenceInCalendarDays(addDays(effectiveEnd, 1), effectiveStart),
 			1,
 		);
-		const left = offsetDays * DAY_WIDTH;
-		const width = durationDays * DAY_WIDTH;
+		const leftPercent = (offsetDays / totalDays) * 100;
+		const widthPercent = (durationDays / totalDays) * 100;
 		const top = index * (BAR_HEIGHT + BAR_GAP) + 8;
 
 		return (
@@ -169,9 +168,9 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 					sx={{
 						position: "absolute",
 						top,
-						left,
-						width,
-						minWidth: 56,
+						left: `${leftPercent}%`,
+						width: `${widthPercent}%`,
+						minWidth: 40,
 						height: BAR_HEIGHT,
 						borderRadius: 1.5,
 						backgroundColor: color,
@@ -222,15 +221,12 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 					<Typography variant="h6" fontWeight={700}>
 						甘特视图
 					</Typography>
-					<Typography variant="caption" color="text.secondary">
-						水平滚动查看更多时间节点
-					</Typography>
 				</Stack>
 
-				<Box sx={{ overflowX: "auto", overflowY: "hidden" }}>
+				<Box sx={{ width: "100%", overflowX: "hidden", overflowY: "hidden" }}>
 					<Box
 						sx={{
-							minWidth: timelineWidth + LABEL_WIDTH,
+							width: "100%",
 							position: "relative",
 						}}
 					>
@@ -247,8 +243,8 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 								pb: 1,
 							}}
 						>
-							<Box sx={{ width: LABEL_WIDTH }} />
-							<Box sx={{ display: "flex" }}>
+							<Box sx={{ width: LABEL_WIDTH, flexShrink: 0 }} />
+							<Box sx={{ display: "flex", flex: 1 }}>
 								{timelineTicks}
 							</Box>
 						</Box>
@@ -268,6 +264,7 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 										<Box
 											sx={{
 												width: LABEL_WIDTH,
+												flexShrink: 0,
 												pr: 2,
 												display: "flex",
 												flexDirection: "column",
@@ -285,9 +282,9 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 										<Box
 											sx={{
 												position: "relative",
-												width: timelineWidth,
+												flex: 1,
 												borderRadius: 3,
-												backgroundImage: `repeating-linear-gradient(to right, rgba(148, 163, 184, 0.08), rgba(148, 163, 184, 0.08) ${DAY_WIDTH - 1}px, transparent ${DAY_WIDTH - 1}px, transparent ${DAY_WIDTH}px)`,
+												backgroundColor: "rgba(148, 163, 184, 0.03)",
 												border: "1px dashed",
 												borderColor: "divider",
 											}}

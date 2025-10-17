@@ -1014,9 +1014,8 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ files }) => {
             columns={headers.map((header: string, colIndex: number) => ({
             field: String(colIndex),
             headerName: header || `列 ${colIndex + 1}`,
-            minWidth: 120,
-            maxWidth: 300,
             width: 180,
+            minWidth: 120,
             sortable: true,
             filterable: true,
             editable: true,

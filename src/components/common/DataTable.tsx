@@ -61,6 +61,7 @@ const StyledDataGrid = styled(DataGrid)(({ theme }) => ({
   '& .MuiDataGrid-root': {
     border: 'none',
     backgroundColor: theme.palette.background.paper,
+    overflow: 'auto',
     '& .MuiDataGrid-cell': {
       borderColor: theme.palette.divider,
       padding: '8px 16px',
@@ -273,7 +274,8 @@ const DataTable: React.FC<DataTableProps> = ({
         position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        gap: 1.5
+        gap: 1.5,
+        overflow: 'hidden'
       }}
     >
       {(enableAdd || enableDelete || enableExport || enableSplit || enableMerge || enableCompare || enableExportExcel) && (
@@ -432,7 +434,16 @@ const DataTable: React.FC<DataTableProps> = ({
         processRowUpdate={onRowUpdate}
         getCellClassName={getCellClassName}
         isCellEditable={isCellEditable}
+        disableVirtualization={false}
+        columnBufferPx={180}
         sx={{
+          width: '100%',
+          '& .MuiDataGrid-main': {
+            overflow: 'auto',
+          },
+          '& .MuiDataGrid-virtualScroller': {
+            overflow: 'auto',
+          },
           '& .MuiDataGrid-toolbarContainer': {
             padding: 2,
             gap: 2,

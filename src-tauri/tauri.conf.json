@@ -61,8 +61,8 @@
 		"windows": [
 			{
 				"fullscreen": false,
-				"height": 600,
-				"width": 800,
+				"height": 768,
+				"width": 1125,
 				"resizable": true,
 				"title": "Blink",
 				"visible": true,

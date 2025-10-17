@@ -49,7 +49,7 @@ const ExcelPage: React.FC = () => {
           <Box 
             sx={{
               mt: 3,
-              opacity: selectedFiles.length > 0 ? 1 : 0
+              opacity: selectedFiles.length > 0 ? 1 : 0,
             }}
           >
             <CardContainer minHeight="500px">

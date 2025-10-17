@@ -1,26 +1,23 @@
-import { Box, Stack } from "@mui/material";
+import { Box } from "@mui/material";
 import { invoke } from "@tauri-apps/api/core";
-import { startOfToday } from "date-fns";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import type { FC } from "react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import TodoCalendar from "../components/todo/TodoCalendar";
 import TodoFormDialog, {
 	type FormValues,
 } from "../components/todo/TodoFormDialog";
 import TodoHeroBanner from "../components/todo/TodoHeroBanner";
-import TodoMetricsPanel from "../components/todo/TodoMetricsPanel";
-import TodoSelectedDatePanel from "../components/todo/TodoSelectedDatePanel";
 import TodoTaskListSection from "../components/todo/TodoTaskListSection";
 import TodoWeeklyReportDialog from "../components/todo/TodoWeeklyReportDialog";
 import TodoTimeLogDialog from "../components/todo/TodoTimeLogDialog";
-import TodoTimeSummaryPanel from "../components/todo/TodoTimeSummaryPanel";
+import TodoSidebar, {
+	type SidebarView,
+} from "../components/todo/TodoSidebar";
 import { useTodoReminders } from "../hooks/useTodoReminders";
 import {
 	addTodoAtom,
 	bulkCompleteAtom,
-	calendarMonthAtom,
-	categoriesAtom,
+  categoriesAtom,
 	clearCompletedAtom,
 	filterAtom,
 	removeTodoAtom,
@@ -36,10 +33,8 @@ import {
 	removeTimeEntryAtom,
 } from "../stores/todoStore";
 import {
-	getCalendarTodos,
 	getFilteredTodos,
 	generateWeeklyReport,
-	getOverdueTodos,
 	getTodayTodos,
 	getWeekTodos,
 } from "../utils/todoUtils";
@@ -58,7 +53,6 @@ const TodoPage: FC = () => {
 	const todos = useAtomValue(todosAtom);
 	const tags = useAtomValue(tagsAtom);
 	const categories = useAtomValue(categoriesAtom);
-	const [calendarMonth, setCalendarMonth] = useAtom(calendarMonthAtom);
 
 	const addTodo = useSetAtom(addTodoAtom);
 	const updateTodo = useSetAtom(updateTodoAtom);
@@ -77,7 +71,6 @@ const TodoPage: FC = () => {
 	const [reportOpen, setReportOpen] = useState(false);
 	const [editingTask, setEditingTask] = useState<TodoTask | null>(null);
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-	const [selectedDate, setSelectedDate] = useState<Date>(startOfToday());
 	const [timeLogOpen, setTimeLogOpen] = useState(false);
 	const [timeLogTaskId, setTimeLogTaskId] = useState<string | null>(null);
 	const [taskViewMode, setTaskViewMode] = useState<"list" | "gantt" | "board">(
@@ -87,16 +80,41 @@ const TodoPage: FC = () => {
 			return stored === "gantt" || stored === "board" ? stored : "list";
 		},
 	);
+	const [sidebarView, setSidebarView] = useState<SidebarView>("welcome");
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
 		window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, taskViewMode);
 	}, [taskViewMode]);
 
-	const filteredTasks = useMemo(
-		() => getFilteredTodos(todos, search, filters),
-		[todos, search, filters],
-	);
+	const filteredTasks = useMemo(() => {
+		let baseTasks = todos;
+
+		// 根据侧边栏视图过滤
+		switch (sidebarView) {
+			case "today":
+				baseTasks = getTodayTodos(todos.filter((t) => !t.completed));
+				break;
+			case "next7days":
+				baseTasks = getWeekTodos(todos.filter((t) => !t.completed));
+				break;
+			case "inbox":
+				baseTasks = todos.filter((t) => !t.completed && !t.category);
+				break;
+			case "completed":
+				baseTasks = todos.filter((t) => t.completed);
+				break;
+			case "trash":
+				baseTasks = [];
+				break;
+			case "welcome":
+			default:
+				baseTasks = todos;
+				break;
+		}
+
+		return getFilteredTodos(baseTasks, search, filters);
+	}, [todos, search, filters, sidebarView]);
 
 	const filteredSummary = useMemo(() => {
 		const completed = filteredTasks.filter((task) => task.completed).length;
@@ -108,36 +126,10 @@ const TodoPage: FC = () => {
 		};
 	}, [filteredTasks]);
 
-	const overdueTasks = useMemo(
-		() => getOverdueTodos(filteredTasks),
-		[filteredTasks],
-	);
-
-	const todayTasks = useMemo(
-		() => getTodayTodos(filteredTasks),
-		[filteredTasks],
-	);
-
-	const weekTasks = useMemo(() => getWeekTodos(filteredTasks), [filteredTasks]);
-
-	const selectedDateTasks = useMemo(
-		() => getCalendarTodos(todos, selectedDate),
-		[todos, selectedDate],
-	);
-
 	const timeLogTask = useMemo(() => {
 		if (!timeLogTaskId) return null;
 		return todos.find((item) => item.id === timeLogTaskId) ?? null;
 	}, [timeLogTaskId, todos]);
-
-	const completedCount = useMemo(
-		() => todos.filter((task) => task.completed).length,
-		[todos],
-	);
-
-	const totalTasks = todos.length;
-	const completionRate =
-		totalTasks === 0 ? 0 : Math.round((completedCount / totalTasks) * 100);
 
 	const weeklyReport = useMemo(
 		() => generateWeeklyReport(todos),
@@ -245,13 +237,6 @@ const TodoPage: FC = () => {
 		bulkComplete(ids);
 	}, [filteredTasks, bulkComplete]);
 
-	const handleCompleteSelectedDate = useCallback(() => {
-		const ids = selectedDateTasks
-			.filter((task) => !task.completed)
-			.map((task) => task.id);
-		bulkComplete(ids);
-	}, [selectedDateTasks, bulkComplete]);
-
 	const handleOpenWidget = useCallback(async () => {
 		try {
 			await invoke("open_todo_widget");
@@ -305,125 +290,103 @@ const TodoPage: FC = () => {
 		[updateTodo],
 	);
 
+	const sidebarTitle = useMemo(() => {
+		switch (sidebarView) {
+			case "today":
+				return "📅 Today";
+			case "next7days":
+				return "📆 Next 7 Days";
+			case "inbox":
+				return "📥 Inbox";
+			case "completed":
+				return "✅ Completed";
+			case "trash":
+				return "🗑️ Trash";
+			case "welcome":
+			default:
+				return "👋 欢迎";
+		}
+	}, [sidebarView]);
+
 	return (
-		<Box sx={{ pb: 6, px: { xs: 2, sm: 3, md: 4 } }}>
-			<Stack spacing={4}>
-				<TodoHeroBanner
-					onOpenWidget={handleOpenWidget}
-					onCreateTask={handleOpenCreateForm}
-					onGenerateWeeklyReport={handleOpenWeeklyReport}
-					onTestNotification={handleTestNotification}
-				/>
-
-				<TodoTaskListSection
-					filteredTasks={filteredTasks}
-					filteredCount={filteredSummary.count}
-					filteredCompletedCount={filteredSummary.completed}
-					hasIncompleteFiltered={filteredSummary.hasIncomplete}
-					hasCompletedTodos={hasCompletedTodos}
-					onBulkComplete={handleBulkComplete}
-					onClearCompleted={clearCompleted}
-					search={search}
-					onSearchChange={setSearch}
-					onAddTask={handleOpenCreateForm}
-					filtersVisible={showFilters}
-					onToggleFilters={() => setShowFilters((prev) => !prev)}
-					filters={filters}
-					onFiltersChange={setFilters}
-					tags={tags}
-					categories={categories}
-					selectedTaskId={selectedTaskId}
-					onSelectTask={(task) => setSelectedTaskId(task.id)}
-					onToggleComplete={(task) => toggleTodo(task.id)}
-					onEditTask={handleEditTask}
-					onDeleteTask={handleDeleteTask}
-					onStatusChange={handleStatusChange}
-					viewMode={taskViewMode}
-					onViewModeChange={setTaskViewMode}
-					onLogTime={handleOpenTimeLog}
-				/>
-
-				<Box
-					sx={{
-						display: "flex",
-						flexDirection: { xs: "column", lg: "row" },
-						gap: 3.5,
-						width: "100%",
-						alignItems: "flex-start",
-					}}
-				>
-					<Box
-						sx={{
-							flex: 1,
-							minHeight: { xs: "auto", lg: "680px" },
-						}}
-					>
-						<TodoCalendar
-							tasks={todos}
-							month={calendarMonth}
-							selectedDate={selectedDate}
-							onSelectDate={setSelectedDate}
-							onMonthChange={setCalendarMonth}
-						/>
-					</Box>
-
-					<Stack
-						spacing={3}
-						sx={{
-							width: { xs: "100%", lg: "420px" },
-							flexShrink: 0,
-							height: { xs: "auto", lg: "680px" },
-						}}
-					>
-						<TodoMetricsPanel
-							completionRate={completionRate}
-							completedCount={completedCount}
-							totalCount={totalTasks}
-							todayCount={todayTasks.length}
-							weekCount={weekTasks.length}
-							overdueCount={overdueTasks.length}
-							filteredCount={filteredSummary.count}
-							filteredCompletedCount={filteredSummary.completed}
-						/>
-						<TodoSelectedDatePanel
-							date={selectedDate}
-							tasks={selectedDateTasks}
-							onCompleteAll={handleCompleteSelectedDate}
-							onAddTask={handleOpenCreateForm}
-							onEditTask={handleEditTask}
-							onDeleteTask={handleDeleteTask}
-							onLogTime={handleOpenTimeLog}
-						/>
-					</Stack>
+		<Box sx={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+			<TodoSidebar
+				tasks={todos}
+				selectedView={sidebarView}
+				onViewChange={setSidebarView}
+				categories={categories}
+			/>
+			<Box
+				sx={{
+					flex: 1,
+					display: "flex",
+					flexDirection: "column",
+					overflow: "hidden",
+				}}
+			>
+				<Box sx={{ px: { xs: 2, sm: 3, md: 4 }, pt: 2, pb: 2 }}>
+					<TodoHeroBanner
+						onOpenWidget={handleOpenWidget}
+						onCreateTask={handleOpenCreateForm}
+						onGenerateWeeklyReport={handleOpenWeeklyReport}
+						onTestNotification={handleTestNotification}
+						title={sidebarTitle}
+					/>
 				</Box>
 
-				<Box sx={{ width: "100%" }}>
-					<TodoTimeSummaryPanel tasks={todos} />
+				<Box sx={{ flex: 1, overflow: "hidden", px: { xs: 2, sm: 3, md: 4 } }}>
+					<TodoTaskListSection
+						filteredTasks={filteredTasks}
+						filteredCount={filteredSummary.count}
+						filteredCompletedCount={filteredSummary.completed}
+						hasIncompleteFiltered={filteredSummary.hasIncomplete}
+						hasCompletedTodos={hasCompletedTodos}
+						onBulkComplete={handleBulkComplete}
+						onClearCompleted={clearCompleted}
+						search={search}
+						onSearchChange={setSearch}
+						onAddTask={handleOpenCreateForm}
+						filtersVisible={showFilters}
+						onToggleFilters={() => setShowFilters((prev) => !prev)}
+						filters={filters}
+						onFiltersChange={setFilters}
+						tags={tags}
+						categories={categories}
+						selectedTaskId={selectedTaskId}
+						onSelectTask={(task) => setSelectedTaskId(task.id)}
+						onToggleComplete={(task) => toggleTodo(task.id)}
+						onEditTask={handleEditTask}
+						onDeleteTask={handleDeleteTask}
+						onStatusChange={handleStatusChange}
+						viewMode={taskViewMode}
+						onViewModeChange={setTaskViewMode}
+						onLogTime={handleOpenTimeLog}
+					/>
 				</Box>
-			</Stack>
 
-			<TodoFormDialog
-				open={formOpen}
-				initialTask={editingTask ?? undefined}
-				onClose={() => setFormOpen(false)}
-				onSubmit={handleFormSubmit}
-				allTags={tags}
-				allCategories={categories}
-				onCreateTag={upsertTag}
-				onCreateCategory={upsertCategory}
-			/>
-			<TodoWeeklyReportDialog
-				open={reportOpen}
-				report={weeklyReport}
-				onClose={handleCloseWeeklyReport}
-			/>
-			<TodoTimeLogDialog
-				open={timeLogOpen}
-				task={timeLogTask}
-				onClose={handleCloseTimeLog}
-				onSubmit={handleSubmitTimeEntry}
-				onDeleteEntry={handleDeleteTimeEntry}
-			/>
+				<TodoFormDialog
+					open={formOpen}
+					initialTask={editingTask ?? undefined}
+					onClose={() => setFormOpen(false)}
+					onSubmit={handleFormSubmit}
+					allTags={tags}
+					allCategories={categories}
+					onCreateTag={upsertTag}
+					onCreateCategory={upsertCategory}
+				/>
+				<TodoWeeklyReportDialog
+					open={reportOpen}
+					report={weeklyReport}
+					onClose={handleCloseWeeklyReport}
+				/>
+				<TodoTimeLogDialog
+					open={timeLogOpen}
+					task={timeLogTask}
+					onClose={handleCloseTimeLog}
+					onSubmit={handleSubmitTimeEntry}
+					onDeleteEntry={handleDeleteTimeEntry}
+				/>
+			</Box>
 		</Box>
 	);
 };

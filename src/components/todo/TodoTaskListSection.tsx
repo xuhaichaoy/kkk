@@ -4,7 +4,6 @@ import ViewKanbanIcon from "@mui/icons-material/ViewKanban";
 import {
 	Box,
 	Button,
-	Paper,
 	Stack,
 	ToggleButton,
 	ToggleButtonGroup,
@@ -89,48 +88,16 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 	};
 
 	return (
-		<Paper
-			variant="outlined"
-			sx={{
-				p: { xs: 3, md: 4 },
-				borderRadius: 4,
-				border: "none",
-				boxShadow: "0 10px 40px rgba(0,0,0,0.08)",
-				background: (theme) =>
-					theme.palette.mode === "light"
-						? "white"
-						: theme.palette.background.paper,
-			}}
-		>
-			<Stack spacing={2.5}>
+		<Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+			<Stack spacing={2.5} sx={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
 				<Stack
-					direction={{ xs: "column", md: "row" }}
+					direction="row"
 					justifyContent="space-between"
-					alignItems={{ xs: "flex-start", md: "center" }}
+					alignItems="center"
 					spacing={2}
+					sx={{ mb: 1 }}
 				>
-					<Stack spacing={0.3}>
-						<Typography
-							variant="h5"
-							fontWeight={700}
-							sx={{ color: "primary.main" }}
-						>
-							任务列表
-						</Typography>
-						<Typography
-							variant="caption"
-							color="text.secondary"
-							sx={{ fontSize: "0.8rem" }}
-						>
-							共 {filteredCount} 项任务，已完成 {filteredCompletedCount} 项
-						</Typography>
-					</Stack>
-					<Stack
-						direction="row"
-						spacing={1.5}
-						flexWrap="wrap"
-						alignItems="center"
-					>
+					<Stack direction="row" spacing={2} alignItems="center">
 						<ToggleButtonGroup
 							value={viewMode}
 							exclusive
@@ -163,24 +130,31 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 								</Stack>
 							</ToggleButton>
 						</ToggleButtonGroup>
+						<Typography variant="body2" color="text.secondary">
+							共 {filteredCount} 项，已完成 {filteredCompletedCount} 项
+						</Typography>
+					</Stack>
+					<Stack
+						direction="row"
+						spacing={1}
+						alignItems="center"
+					>
 						<Button
-							variant="contained"
-							size="medium"
+							variant="outlined"
+							size="small"
 							onClick={onBulkComplete}
 							disabled={!hasIncompleteFiltered}
 							sx={{
 								borderRadius: 2,
 								fontWeight: 600,
-								boxShadow: "none",
-								"&:hover": { boxShadow: "0 4px 12px rgba(0,0,0,0.15)" },
 							}}
 						>
-							批量完成筛选结果
+							批量完成
 						</Button>
 						<Button
 							variant="outlined"
 							color="error"
-							size="medium"
+							size="small"
 							onClick={onClearCompleted}
 							disabled={!hasCompletedTodos}
 							sx={{
@@ -208,40 +182,45 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 					availableCategories={categories}
 				/>
 
-				{viewMode === "list" ? (
-					<>
-						<Box>
-            <TodoList
-              tasks={filteredTasks}
-              onToggleComplete={onToggleComplete}
-              onEdit={onEditTask}
-              onDelete={onDeleteTask}
-              selectedId={selectedTaskId ?? undefined}
-              onSelect={onSelectTask}
-              onLogTime={onLogTime}
-            />
-						</Box>
+				<Box sx={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+					{viewMode === "list" ? (
+						<Box sx={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+							<Box sx={{ flex: 1 }}>
+								<TodoList
+									tasks={filteredTasks}
+									onToggleComplete={onToggleComplete}
+									onEdit={onEditTask}
+									onDelete={onDeleteTask}
+									selectedId={selectedTaskId ?? undefined}
+									onSelect={onSelectTask}
+									onLogTime={onLogTime}
+								/>
+							</Box>
 
-						<Typography
-							variant="caption"
-							color="text.secondary"
-							sx={{ fontSize: "0.75rem", textAlign: "right" }}
-						>
-							进行中 {activeCount} 项
-						</Typography>
-					</>
-				) : viewMode === "gantt" ? (
-					<TodoGanttView tasks={filteredTasks} />
-				) : (
-					<TodoKanbanBoard
-						tasks={filteredTasks}
-						onStatusChange={onStatusChange}
-						onEditTask={onEditTask}
-						onLogTime={onLogTime}
-					/>
-				)}
+							<Typography
+								variant="caption"
+								color="text.secondary"
+								sx={{ fontSize: "0.75rem", textAlign: "right", pt: 2 }}
+							>
+								进行中 {activeCount} 项
+							</Typography>
+						</Box>
+					) : viewMode === "gantt" ? (
+						<Box sx={{ flex: 1, overflowY: "auto" }}>
+							<TodoGanttView tasks={filteredTasks} />
+						</Box>
+					) : (
+						<Box sx={{ flex: 1, overflow: "hidden" }}>
+							<TodoKanbanBoard
+								tasks={filteredTasks}
+								onStatusChange={onStatusChange}
+								onEditTask={onEditTask}
+							/>
+						</Box>
+					)}
+				</Box>
 			</Stack>
-		</Paper>
+		</Box>
 	);
 };
 

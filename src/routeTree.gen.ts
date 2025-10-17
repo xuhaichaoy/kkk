@@ -11,7 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TodoIndexRouteImport } from './routes/todo/index'
+import { Route as TimeinvestIndexRouteImport } from './routes/timeinvest/index'
 import { Route as SpeechIndexRouteImport } from './routes/speech/index'
+import { Route as ExcelIndexRouteImport } from './routes/excel/index'
+import { Route as CalendarIndexRouteImport } from './routes/calendar/index'
 import { Route as TodoWidgetRouteImport } from './routes/todo/widget'
 
 const IndexRoute = IndexRouteImport.update({
@@ -24,9 +27,24 @@ const TodoIndexRoute = TodoIndexRouteImport.update({
   path: '/todo/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TimeinvestIndexRoute = TimeinvestIndexRouteImport.update({
+  id: '/timeinvest/',
+  path: '/timeinvest/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SpeechIndexRoute = SpeechIndexRouteImport.update({
   id: '/speech/',
   path: '/speech/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExcelIndexRoute = ExcelIndexRouteImport.update({
+  id: '/excel/',
+  path: '/excel/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CalendarIndexRoute = CalendarIndexRouteImport.update({
+  id: '/calendar/',
+  path: '/calendar/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TodoWidgetRoute = TodoWidgetRouteImport.update({
@@ -38,34 +56,68 @@ const TodoWidgetRoute = TodoWidgetRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/todo/widget': typeof TodoWidgetRoute
+  '/calendar': typeof CalendarIndexRoute
+  '/excel': typeof ExcelIndexRoute
   '/speech': typeof SpeechIndexRoute
+  '/timeinvest': typeof TimeinvestIndexRoute
   '/todo': typeof TodoIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/todo/widget': typeof TodoWidgetRoute
+  '/calendar': typeof CalendarIndexRoute
+  '/excel': typeof ExcelIndexRoute
   '/speech': typeof SpeechIndexRoute
+  '/timeinvest': typeof TimeinvestIndexRoute
   '/todo': typeof TodoIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/todo/widget': typeof TodoWidgetRoute
+  '/calendar/': typeof CalendarIndexRoute
+  '/excel/': typeof ExcelIndexRoute
   '/speech/': typeof SpeechIndexRoute
+  '/timeinvest/': typeof TimeinvestIndexRoute
   '/todo/': typeof TodoIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/todo/widget' | '/speech' | '/todo'
+  fullPaths:
+    | '/'
+    | '/todo/widget'
+    | '/calendar'
+    | '/excel'
+    | '/speech'
+    | '/timeinvest'
+    | '/todo'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/todo/widget' | '/speech' | '/todo'
-  id: '__root__' | '/' | '/todo/widget' | '/speech/' | '/todo/'
+  to:
+    | '/'
+    | '/todo/widget'
+    | '/calendar'
+    | '/excel'
+    | '/speech'
+    | '/timeinvest'
+    | '/todo'
+  id:
+    | '__root__'
+    | '/'
+    | '/todo/widget'
+    | '/calendar/'
+    | '/excel/'
+    | '/speech/'
+    | '/timeinvest/'
+    | '/todo/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   TodoWidgetRoute: typeof TodoWidgetRoute
+  CalendarIndexRoute: typeof CalendarIndexRoute
+  ExcelIndexRoute: typeof ExcelIndexRoute
   SpeechIndexRoute: typeof SpeechIndexRoute
+  TimeinvestIndexRoute: typeof TimeinvestIndexRoute
   TodoIndexRoute: typeof TodoIndexRoute
 }
 
@@ -85,11 +137,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TodoIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/timeinvest/': {
+      id: '/timeinvest/'
+      path: '/timeinvest'
+      fullPath: '/timeinvest'
+      preLoaderRoute: typeof TimeinvestIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/speech/': {
       id: '/speech/'
       path: '/speech'
       fullPath: '/speech'
       preLoaderRoute: typeof SpeechIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/excel/': {
+      id: '/excel/'
+      path: '/excel'
+      fullPath: '/excel'
+      preLoaderRoute: typeof ExcelIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/calendar/': {
+      id: '/calendar/'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof CalendarIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/todo/widget': {
@@ -105,7 +178,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   TodoWidgetRoute: TodoWidgetRoute,
+  CalendarIndexRoute: CalendarIndexRoute,
+  ExcelIndexRoute: ExcelIndexRoute,
   SpeechIndexRoute: SpeechIndexRoute,
+  TimeinvestIndexRoute: TimeinvestIndexRoute,
   TodoIndexRoute: TodoIndexRoute,
 }
 export const routeTree = rootRouteImport

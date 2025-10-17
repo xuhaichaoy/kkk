@@ -11,7 +11,7 @@ interface PageHeaderProps {
 }
 
 const HeaderContainer = styled(Box)(({ theme }) => ({
-  marginBottom: theme.spacing(4),
+  marginBottom: theme.spacing(2.5),
   transition: 'all 0.3s ease',
 }));
 
@@ -49,15 +49,15 @@ const PageHeader: React.FC<PageHeaderProps> = ({
         alignItems: 'center',
         justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'space-between',
         flexDirection: { xs: 'column', md: align === 'center' ? 'column' : 'row' },
-        gap: 2
+        gap: 1.5
       }}>
         <Box sx={{ flex: 1, ...getAlignmentStyles() }}>
           <TitleComponent 
             variant="h4" 
             sx={{ 
-              mb: subtitle ? 1 : 0,
+              mb: subtitle ? 0.5 : 0,
               fontWeight: 600,
-              fontSize: { xs: '1.75rem', sm: '2rem', md: '2.125rem' }
+              fontSize: { xs: '1.4rem', sm: '1.5rem', md: '1.6rem' }
             }}
           >
             {title}
@@ -68,8 +68,8 @@ const PageHeader: React.FC<PageHeaderProps> = ({
               sx={{
                 maxWidth: '600px',
                 mx: align === 'center' ? 'auto' : align === 'right' ? 'auto' : { xs: 'auto', md: 0 },
-                fontSize: '1.1rem',
-                lineHeight: 1.5
+                fontSize: '0.95rem',
+                lineHeight: 1.45
               }}
             >
               {subtitle}
