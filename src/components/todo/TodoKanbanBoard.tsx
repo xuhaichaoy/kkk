@@ -318,7 +318,7 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 							key={column.key}
 							sx={{
 								flex: "0 0 auto",
-								width: 320,
+								width: 280,
 								height: "100%",
 								display: "flex",
 								flexDirection: "column",

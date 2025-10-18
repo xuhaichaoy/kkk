@@ -1,8 +1,10 @@
-import { Box } from "@mui/material";
+import { Box, IconButton, Stack, Tooltip } from "@mui/material";
 import { invoke } from "@tauri-apps/api/core";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import type { FC } from "react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import TodoFormDialog, {
 	type FormValues,
 } from "../components/todo/TodoFormDialog";
@@ -81,6 +83,7 @@ const TodoPage: FC = () => {
 		},
 	);
 	const [sidebarView, setSidebarView] = useState<SidebarView>("welcome");
+	const [sidebarOpen, setSidebarOpen] = useState(true);
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
@@ -90,27 +93,32 @@ const TodoPage: FC = () => {
 	const filteredTasks = useMemo(() => {
 		let baseTasks = todos;
 
-		// 根据侧边栏视图过滤
-		switch (sidebarView) {
-			case "today":
-				baseTasks = getTodayTodos(todos.filter((t) => !t.completed));
-				break;
-			case "next7days":
-				baseTasks = getWeekTodos(todos.filter((t) => !t.completed));
-				break;
-			case "inbox":
-				baseTasks = todos.filter((t) => !t.completed && !t.category);
-				break;
-			case "completed":
-				baseTasks = todos.filter((t) => t.completed);
-				break;
-			case "trash":
-				baseTasks = [];
-				break;
-			case "welcome":
-			default:
-				baseTasks = todos;
-				break;
+		if (sidebarView.startsWith("category:")) {
+			const categoryName = sidebarView.slice("category:".length);
+			baseTasks = todos.filter((t) => t.category === categoryName);
+		} else {
+			// 根据侧边栏视图过滤
+			switch (sidebarView) {
+				case "today":
+					baseTasks = getTodayTodos(todos.filter((t) => !t.completed));
+					break;
+				case "next7days":
+					baseTasks = getWeekTodos(todos.filter((t) => !t.completed));
+					break;
+				case "inbox":
+					baseTasks = todos.filter((t) => !t.completed && !t.category);
+					break;
+				case "completed":
+					baseTasks = todos.filter((t) => t.completed);
+					break;
+				case "trash":
+					baseTasks = [];
+					break;
+				case "welcome":
+				default:
+					baseTasks = todos;
+					break;
+			}
 		}
 
 		return getFilteredTodos(baseTasks, search, filters);
@@ -291,6 +299,11 @@ const TodoPage: FC = () => {
 	);
 
 	const sidebarTitle = useMemo(() => {
+		if (sidebarView.startsWith("category:")) {
+			const categoryName = sidebarView.slice("category:".length);
+			return categoryName ? `📋 ${categoryName}` : "📋 列表";
+		}
+
 		switch (sidebarView) {
 			case "today":
 				return "📅 Today";
@@ -308,14 +321,21 @@ const TodoPage: FC = () => {
 		}
 	}, [sidebarView]);
 
+	const handleToggleSidebar = useCallback(() => {
+		setSidebarOpen((prev) => !prev);
+	}, []);
+
 	return (
 		<Box sx={{ display: "flex", height: "100vh", overflow: "hidden" }}>
-			<TodoSidebar
-				tasks={todos}
-				selectedView={sidebarView}
-				onViewChange={setSidebarView}
-				categories={categories}
-			/>
+			{sidebarOpen && (
+				<TodoSidebar
+					tasks={todos}
+					selectedView={sidebarView}
+					onViewChange={setSidebarView}
+					categories={categories}
+					onCreateCategory={upsertCategory}
+				/>
+			)}
 			<Box
 				sx={{
 					flex: 1,
@@ -325,13 +345,37 @@ const TodoPage: FC = () => {
 				}}
 			>
 				<Box sx={{ px: { xs: 2, sm: 3, md: 4 }, pt: 2, pb: 2 }}>
-					<TodoHeroBanner
-						onOpenWidget={handleOpenWidget}
-						onCreateTask={handleOpenCreateForm}
-						onGenerateWeeklyReport={handleOpenWeeklyReport}
-						onTestNotification={handleTestNotification}
-						title={sidebarTitle}
-					/>
+					<Stack direction="row" alignItems="center" spacing={2}>
+						<Tooltip title={sidebarOpen ? "收起列表" : "展开列表"} arrow>
+							<IconButton
+								onClick={handleToggleSidebar}
+								size="small"
+								sx={{
+									borderRadius: 2,
+									backgroundColor: "background.paper",
+									boxShadow: 1,
+									"&:hover": {
+										backgroundColor: "action.hover",
+									},
+								}}
+							>
+								{sidebarOpen ? (
+									<ChevronLeftIcon fontSize="small" />
+								) : (
+									<ChevronRightIcon fontSize="small" />
+								)}
+							</IconButton>
+						</Tooltip>
+						<Box sx={{ flex: 1 }}>
+							<TodoHeroBanner
+								onOpenWidget={handleOpenWidget}
+								onCreateTask={handleOpenCreateForm}
+								onGenerateWeeklyReport={handleOpenWeeklyReport}
+								onTestNotification={handleTestNotification}
+								title={sidebarTitle}
+							/>
+						</Box>
+					</Stack>
 				</Box>
 
 				<Box sx={{ flex: 1, overflow: "hidden", px: { xs: 2, sm: 3, md: 4 } }}>
