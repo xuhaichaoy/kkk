@@ -18,7 +18,6 @@ import TodoSidebar, {
 import { useTodoReminders } from "../hooks/useTodoReminders";
 import {
 	addTodoAtom,
-	bulkCompleteAtom,
   categoriesAtom,
 	clearCompletedAtom,
 	filterAtom,
@@ -37,6 +36,7 @@ import {
 import {
 	getFilteredTodos,
 	generateWeeklyReport,
+	generateWeeklyReflection,
 	getTodayTodos,
 	getWeekTodos,
 } from "../utils/todoUtils";
@@ -65,12 +65,12 @@ const TodoPage: FC = () => {
 	const upsertTimeEntry = useSetAtom(upsertTimeEntryAtom);
 	const removeTimeEntry = useSetAtom(removeTimeEntryAtom);
 	const clearCompleted = useSetAtom(clearCompletedAtom);
-	const bulkComplete = useSetAtom(bulkCompleteAtom);
 
 	const [showFilters, setShowFilters] = useState(false);
 	const [search, setSearch] = useState("");
 	const [formOpen, setFormOpen] = useState(false);
 	const [reportOpen, setReportOpen] = useState(false);
+	const [summaryOpen, setSummaryOpen] = useState(false);
 	const [editingTask, setEditingTask] = useState<TodoTask | null>(null);
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 	const [timeLogOpen, setTimeLogOpen] = useState(false);
@@ -126,11 +126,9 @@ const TodoPage: FC = () => {
 
 	const filteredSummary = useMemo(() => {
 		const completed = filteredTasks.filter((task) => task.completed).length;
-		const hasIncomplete = filteredTasks.some((task) => !task.completed);
 		return {
 			count: filteredTasks.length,
 			completed,
-			hasIncomplete,
 		};
 	}, [filteredTasks]);
 
@@ -141,6 +139,10 @@ const TodoPage: FC = () => {
 
 	const weeklyReport = useMemo(
 		() => generateWeeklyReport(todos),
+		[todos],
+	);
+	const weeklyReflectionSummary = useMemo(
+		() => generateWeeklyReflection(todos),
 		[todos],
 	);
 
@@ -163,6 +165,7 @@ const TodoPage: FC = () => {
 						title: values.title,
 						description: values.description,
 						notes: values.notes,
+						reflection: values.reflection,
 						priority: values.priority,
 						completed: values.completed,
 						dueDate: values.dueDate,
@@ -178,6 +181,7 @@ const TodoPage: FC = () => {
 					title: values.title,
 					description: values.description,
 					notes: values.notes,
+					reflection: values.reflection,
 					priority: values.priority,
 					completed: values.completed,
 					dueDate: values.dueDate,
@@ -238,13 +242,6 @@ const TodoPage: FC = () => {
 		[removeTimeEntry],
 	);
 
-	const handleBulkComplete = useCallback(() => {
-		const ids = filteredTasks
-			.filter((task) => !task.completed)
-			.map((task) => task.id);
-		bulkComplete(ids);
-	}, [filteredTasks, bulkComplete]);
-
 	const handleOpenWidget = useCallback(async () => {
 		try {
 			await invoke("open_todo_widget");
@@ -259,6 +256,14 @@ const TodoPage: FC = () => {
 
 	const handleCloseWeeklyReport = useCallback(() => {
 		setReportOpen(false);
+	}, []);
+
+	const handleOpenWeeklySummary = useCallback(() => {
+		setSummaryOpen(true);
+	}, []);
+
+	const handleCloseWeeklySummary = useCallback(() => {
+		setSummaryOpen(false);
 	}, []);
 
 	const handleTestNotification = useCallback(async () => {
@@ -325,6 +330,14 @@ const TodoPage: FC = () => {
 		setSidebarOpen((prev) => !prev);
 	}, []);
 
+	// 获取当前分类（用于新建任务时的默认分类）
+	const currentCategory = useMemo(() => {
+		if (sidebarView.startsWith("category:")) {
+			return sidebarView.slice("category:".length);
+		}
+		return undefined;
+	}, [sidebarView]);
+
 	return (
 		<Box sx={{ display: "flex", height: "100vh", overflow: "hidden" }}>
 			{sidebarOpen && (
@@ -371,6 +384,7 @@ const TodoPage: FC = () => {
 								onOpenWidget={handleOpenWidget}
 								onCreateTask={handleOpenCreateForm}
 								onGenerateWeeklyReport={handleOpenWeeklyReport}
+								onGenerateWeeklySummary={handleOpenWeeklySummary}
 								onTestNotification={handleTestNotification}
 								title={sidebarTitle}
 							/>
@@ -383,9 +397,7 @@ const TodoPage: FC = () => {
 						filteredTasks={filteredTasks}
 						filteredCount={filteredSummary.count}
 						filteredCompletedCount={filteredSummary.completed}
-						hasIncompleteFiltered={filteredSummary.hasIncomplete}
 						hasCompletedTodos={hasCompletedTodos}
-						onBulkComplete={handleBulkComplete}
 						onClearCompleted={clearCompleted}
 						search={search}
 						onSearchChange={setSearch}
@@ -417,11 +429,23 @@ const TodoPage: FC = () => {
 					allCategories={categories}
 					onCreateTag={upsertTag}
 					onCreateCategory={upsertCategory}
+					defaultCategory={currentCategory}
 				/>
 				<TodoWeeklyReportDialog
 					open={reportOpen}
 					report={weeklyReport}
 					onClose={handleCloseWeeklyReport}
+					editable
+					title="周报工作汇总"
+					description="以下内容根据最近任务动态自动生成，可在复制前自行调整。"
+				/>
+				<TodoWeeklyReportDialog
+					open={summaryOpen}
+					report={weeklyReflectionSummary}
+					onClose={handleCloseWeeklySummary}
+					editable
+					title="本周反思总结"
+					description="根据任务的「反思」字段自动生成，可在此补充或修改后再复制。"
 				/>
 				<TodoTimeLogDialog
 					open={timeLogOpen}

@@ -9,7 +9,6 @@ import {
 	startOfDay,
 	startOfToday,
 	startOfWeek,
-	subWeeks,
 } from "date-fns";
 import type {
 	TodoFilterState,
@@ -34,6 +33,7 @@ export const matchesSearch = (task: TodoTask, search: string) => {
 		task.title.toLowerCase().includes(lower) ||
 		task.description?.toLowerCase().includes(lower) ||
 		task.notes?.toLowerCase().includes(lower) ||
+		task.reflection?.toLowerCase().includes(lower) ||
 		task.tags.some((tag) => tag.toLowerCase().includes(lower))
 	);
 };
@@ -249,27 +249,28 @@ export const generateWeeklyReport = (
 ) => {
 	const now = referenceDate;
 	const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });
-	const lastWeekStart = subWeeks(currentWeekStart, 1);
-	const lastWeekEnd = addDays(lastWeekStart, 6);
+	const currentWeekEnd = endOfWeek(now, { weekStartsOn: 1 });
+	const effectiveWeekEnd =
+		now.getTime() < currentWeekEnd.getTime() ? now : currentWeekEnd;
 	const nextWeekStart = addWeeks(currentWeekStart, 1);
-	const nextWeekEnd = addDays(nextWeekStart, 6);
+	const nextWeekEnd = endOfWeek(nextWeekStart, { weekStartsOn: 1 });
 
 	const totalCount = todos.length;
 	const completedCount = todos.filter((task) => task.completed).length;
-	const createdLastWeek = todos.filter((task) =>
+	const createdThisWeek = todos.filter((task) =>
 		isWithinInterval(new Date(task.createdAt), {
-			start: lastWeekStart,
-			end: now,
+			start: currentWeekStart,
+			end: effectiveWeekEnd,
 		}),
 	);
 
-	const completedLastWeek = todos.filter(
+	const completedThisWeek = todos.filter(
 		(task) =>
 			task.completed &&
 			task.completedAt &&
 			isWithinInterval(new Date(task.completedAt), {
-				start: lastWeekStart,
-				end: lastWeekEnd,
+				start: currentWeekStart,
+				end: effectiveWeekEnd,
 			}),
 	);
 
@@ -305,19 +306,19 @@ export const generateWeeklyReport = (
 	const lines: string[] = [];
 	lines.push("【本周概览】");
 	lines.push(
-		`- 时间范围：${format(lastWeekStart, "MM月dd日")} - ${format(
-			lastWeekEnd,
+		`- 时间范围：${format(currentWeekStart, "MM月dd日")} - ${format(
+			currentWeekEnd,
 			"MM月dd日",
 		)}`,
 	);
 	lines.push(
-		`- 总任务 ${totalCount} 项，已完成 ${completedCount} 项，本周新增 ${createdLastWeek.length} 项`,
+		`- 总任务 ${totalCount} 项，已完成 ${completedCount} 项，本周新增 ${createdThisWeek.length} 项`,
 	);
-	lines.push(`- 本周完成 ${completedLastWeek.length} 项`);
+	lines.push(`- 本周完成 ${completedThisWeek.length} 项`);
 
-	if (completedLastWeek.length > 0) {
+	if (completedThisWeek.length > 0) {
 		lines.push("\n【本周已完成】");
-		completedLastWeek.forEach((task) => {
+		completedThisWeek.forEach((task) => {
 			const completedAt = formatDateTime(task.completedAt);
 			lines.push(
 				`- [${priorityLabel[task.priority]}] ${task.title}${
@@ -355,6 +356,106 @@ export const generateWeeklyReport = (
 				`- [${priorityLabel[task.priority]}] ${task.title} ｜ 已逾期：${formatDate(
 					task.dueDate,
 				)}${task.category ? ` ｜ 分类：${task.category}` : ""}`,
+			);
+		});
+	}
+
+	return lines.join("\n");
+};
+
+export const generateWeeklyReflection = (
+	todos: TodoTask[],
+	referenceDate = new Date(),
+) => {
+	const now = referenceDate;
+	const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });
+	const currentWeekEnd = endOfWeek(now, { weekStartsOn: 1 });
+
+	const isInReflectionWindow = (value?: string) => {
+		if (!value) return false;
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return false;
+		return isWithinInterval(date, {
+			start: currentWeekStart,
+			end: currentWeekEnd,
+		});
+	};
+
+	const reflectionCandidates = todos.filter(
+		(task) => task.reflection && task.reflection.trim().length > 0,
+	);
+
+	const reflectionsThisWeek = reflectionCandidates
+		.filter(
+			(task) =>
+				isInReflectionWindow(task.completedAt) ||
+				isInReflectionWindow(task.updatedAt) ||
+				isInReflectionWindow(task.createdAt),
+		)
+		.sort((a, b) => {
+			const getTimestamp = (task: TodoTask) => {
+				const candidate =
+					task.completedAt ?? task.updatedAt ?? task.createdAt;
+				const date = new Date(candidate);
+				return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+			};
+			return getTimestamp(b) - getTimestamp(a);
+		});
+
+	const completedThisWeek = todos.filter(
+		(task) =>
+			task.completed &&
+			task.completedAt &&
+			isWithinInterval(new Date(task.completedAt), {
+				start: currentWeekStart,
+				end: currentWeekEnd,
+			}),
+	);
+
+	const missingReflection = completedThisWeek.filter(
+		(task) => !task.reflection || task.reflection.trim().length === 0,
+	);
+
+	const lines: string[] = [];
+	lines.push("【本周反思总结】");
+	lines.push(
+		`- 时间范围：${format(currentWeekStart, "MM月dd日")} - ${format(
+			currentWeekEnd,
+			"MM月dd日",
+		)}`,
+	);
+
+	if (reflectionsThisWeek.length > 0) {
+		lines.push("\n【任务反思】");
+		reflectionsThisWeek.forEach((task) => {
+			const completedAt = formatDateTime(task.completedAt);
+			const updatedAt = completedAt ? "" : formatDateTime(task.updatedAt);
+			const labelParts = [
+				`[${priorityLabel[task.priority]}] ${task.title}`,
+			];
+			if (task.category) {
+				labelParts.push(`分类：${task.category}`);
+			}
+			if (completedAt) {
+				labelParts.push(`完成：${completedAt}`);
+			} else if (updatedAt) {
+				labelParts.push(`更新：${updatedAt}`);
+			}
+			lines.push(`- ${labelParts.join(" ｜ ")}`);
+			lines.push(`  反思：${task.reflection?.trim() ?? ""}`);
+		});
+	} else {
+		lines.push("- 本周暂无反思记录，可在任务详情中补充「反思」。");
+	}
+
+	if (missingReflection.length > 0) {
+		lines.push("\n【待补充反思】");
+		missingReflection.forEach((task) => {
+			const completedAt = formatDateTime(task.completedAt);
+			lines.push(
+				`- [${priorityLabel[task.priority]}] ${task.title}${
+					completedAt ? ` ｜ 完成：${completedAt}` : ""
+				}${task.category ? ` ｜ 分类：${task.category}` : ""}`,
 			);
 		});
 	}

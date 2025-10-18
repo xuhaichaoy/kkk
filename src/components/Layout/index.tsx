@@ -7,6 +7,7 @@ import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
 import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined';
+import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -59,6 +60,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const tabs = React.useMemo(
     () => [
+      { label: '优先矩阵', value: '/matrix' as const, icon: ViewQuiltOutlinedIcon },
       { label: '任务面板', value: '/' as const, icon: ChecklistRtlOutlinedIcon },
       { label: '任务日历', value: '/calendar' as const, icon: CalendarMonthOutlinedIcon },
       { label: '时间投入概览', value: '/timeinvest' as const, icon: AccessTimeIcon },

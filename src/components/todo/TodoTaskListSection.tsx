@@ -25,9 +25,7 @@ interface TodoTaskListSectionProps {
 	filteredTasks: TodoTask[];
 	filteredCount: number;
 	filteredCompletedCount: number;
-	hasIncompleteFiltered: boolean;
 	hasCompletedTodos: boolean;
-	onBulkComplete: () => void;
 	onClearCompleted: () => void;
 	search: string;
 	onSearchChange: (value: string) => void;
@@ -53,9 +51,7 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 	filteredTasks,
 	filteredCount,
 	filteredCompletedCount,
-	hasIncompleteFiltered,
 	hasCompletedTodos,
-	onBulkComplete,
 	onClearCompleted,
 	search,
 	onSearchChange,
@@ -139,18 +135,6 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 						spacing={1}
 						alignItems="center"
 					>
-						<Button
-							variant="outlined"
-							size="small"
-							onClick={onBulkComplete}
-							disabled={!hasIncompleteFiltered}
-							sx={{
-								borderRadius: 2,
-								fontWeight: 600,
-							}}
-						>
-							批量完成
-						</Button>
 						<Button
 							variant="outlined"
 							color="error"

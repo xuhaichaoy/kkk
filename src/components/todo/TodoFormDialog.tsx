@@ -32,6 +32,7 @@ interface TodoFormDialogProps {
 	allCategories: string[];
 	onCreateTag: (tag: string) => void;
 	onCreateCategory: (category: string) => void;
+	defaultCategory?: string;
 }
 
 export interface FormValues {
@@ -39,6 +40,7 @@ export interface FormValues {
 	title: string;
 	description?: string;
 	notes?: string;
+	reflection?: string;
 	priority: TodoPriority;
 	completed: boolean;
 	dueDate?: string;
@@ -89,6 +91,7 @@ const createDefaultValues = (): FormValues => ({
 	title: "",
 	description: "",
 	notes: "",
+	reflection: "",
 	priority: "medium",
 	completed: false,
 	tags: [],
@@ -113,6 +116,7 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 	allCategories,
 	onCreateTag,
 	onCreateCategory,
+	defaultCategory,
 }) => {
 	const [values, setValues] = useState<FormValues>(() => createDefaultValues());
 
@@ -124,6 +128,7 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 				title: initialTask.title,
 				description: initialTask.description ?? "",
 				notes: initialTask.notes ?? "",
+				reflection: initialTask.reflection ?? "",
 				priority: initialTask.priority,
 				completed: initialTask.completed,
 				dueDate: initialTask.dueDate,
@@ -135,9 +140,13 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 					(initialTask.completed ? "completed" : "notStarted"),
 			});
 		} else {
-			setValues(createDefaultValues());
+			// 新建任务时，使用默认分类
+			setValues({
+				...createDefaultValues(),
+				category: defaultCategory,
+			});
 		}
-	}, [open, initialTask]);
+	}, [open, initialTask, defaultCategory]);
 
 	const titleInvalid = useMemo(
 		() => values.title.trim().length === 0,
@@ -213,6 +222,19 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 							minRows={2}
 							onChange={(event) =>
 								setValues((prev) => ({ ...prev, notes: event.target.value }))
+							}
+							fullWidth
+						/>
+						<TextField
+							label="反思"
+							value={values.reflection}
+							multiline
+							minRows={2}
+							onChange={(event) =>
+								setValues((prev) => ({
+									...prev,
+									reflection: event.target.value,
+								}))
 							}
 							fullWidth
 						/>

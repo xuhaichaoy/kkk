@@ -14,6 +14,10 @@ interface TodoWeeklyReportDialogProps {
   open: boolean;
   report: string;
   onClose: () => void;
+  title?: string;
+  description?: string;
+  editable?: boolean;
+  copyButtonLabel?: string;
 }
 
 const copyToClipboard = async (text: string) => {
@@ -40,8 +44,17 @@ const copyToClipboard = async (text: string) => {
   return success;
 };
 
-const TodoWeeklyReportDialog = ({ open, report, onClose }: TodoWeeklyReportDialogProps) => {
+const TodoWeeklyReportDialog = ({
+  open,
+  report,
+  onClose,
+  title = '周报工作汇总',
+  description = '以下内容根据最近任务动态自动生成，可直接复制到工作周报中。',
+  editable = true,
+  copyButtonLabel = '复制到剪贴板',
+}: TodoWeeklyReportDialogProps) => {
   const [copied, setCopied] = useState(false);
+  const [content, setContent] = useState(report);
 
   useEffect(() => {
     if (!open) {
@@ -49,9 +62,15 @@ const TodoWeeklyReportDialog = ({ open, report, onClose }: TodoWeeklyReportDialo
     }
   }, [open]);
 
+  useEffect(() => {
+    if (open) {
+      setContent(report);
+    }
+  }, [open, report]);
+
   const handleCopy = async () => {
     try {
-      const success = await copyToClipboard(report);
+      const success = await copyToClipboard(content);
       setCopied(success);
       if (success) {
         setTimeout(() => setCopied(false), 2000);
@@ -64,25 +83,29 @@ const TodoWeeklyReportDialog = ({ open, report, onClose }: TodoWeeklyReportDialo
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>周报工作汇总</DialogTitle>
+      <DialogTitle>{title}</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
           <Typography variant="body2" color="text.secondary">
-            以下内容根据最近任务动态自动生成，可直接复制到工作周报中。
+            {description}
           </Typography>
           <TextField
             multiline
             fullWidth
             minRows={14}
-            value={report}
-            InputProps={{ readOnly: true }}
+            value={content}
+            onChange={(event) => {
+              if (!editable) return;
+              setContent(event.target.value);
+            }}
+            InputProps={{ readOnly: !editable }}
           />
         </Stack>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>关闭</Button>
-        <Button variant="contained" onClick={handleCopy} disabled={!report.trim()}>
-          {copied ? '已复制' : '复制到剪贴板'}
+        <Button variant="contained" onClick={handleCopy} disabled={!content.trim()}>
+          {copied ? '已复制' : copyButtonLabel}
         </Button>
       </DialogActions>
     </Dialog>

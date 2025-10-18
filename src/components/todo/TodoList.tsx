@@ -201,6 +201,15 @@ const TodoList = ({
 					{task.notes}
 				</Typography>
 			)}
+			{task.reflection && (
+				<Typography
+					variant="caption"
+					color="text.secondary"
+					sx={{ opacity: 0.8, wordBreak: "break-word" }}
+				>
+					{task.reflection}
+				</Typography>
+			)}
 		</Stack>
 
 		<Stack direction="row" spacing={1} alignItems="center">

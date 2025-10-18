@@ -165,15 +165,16 @@ const TodoWidgetPage: FC = () => {
 	const handleAddTask = () => {
 		const trimmed = title.trim();
 		if (!trimmed) return;
-		addTodo({
-			title: trimmed,
-			description: "",
-			notes: "",
-			priority: "medium",
-			completed: false,
-			tags: [],
-			reminderSent: false,
-		});
+	addTodo({
+		title: trimmed,
+		description: "",
+		notes: "",
+		reflection: "",
+		priority: "medium",
+		completed: false,
+		tags: [],
+		reminderSent: false,
+	});
 		setTitle("");
 	};
 

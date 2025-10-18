@@ -5,6 +5,7 @@ interface TodoHeroBannerProps {
   onOpenWidget: () => void;
   onCreateTask: () => void;
   onGenerateWeeklyReport?: () => void;
+  onGenerateWeeklySummary?: () => void;
   onTestNotification?: () => void;
   title?: string;
 }
@@ -13,6 +14,7 @@ const TodoHeroBanner: React.FC<TodoHeroBannerProps> = ({
   onOpenWidget,
   onCreateTask,
   onGenerateWeeklyReport,
+  onGenerateWeeklySummary,
   onTestNotification,
   title,
 }) => (
@@ -33,17 +35,6 @@ const TodoHeroBanner: React.FC<TodoHeroBannerProps> = ({
         >
           桌面小组件
         </Button>
-        <Button
-          variant="contained"
-          size="small"
-          onClick={onCreateTask}
-          sx={{
-            borderRadius: 2,
-            fontWeight: 600,
-          }}
-        >
-          + 新建任务
-        </Button>
         {onGenerateWeeklyReport && (
           <Button
             variant="outlined"
@@ -55,6 +46,19 @@ const TodoHeroBanner: React.FC<TodoHeroBannerProps> = ({
             }}
           >
             周报
+          </Button>
+        )}
+        {onGenerateWeeklySummary && (
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={onGenerateWeeklySummary}
+            sx={{
+              borderRadius: 2,
+              fontWeight: 600,
+            }}
+          >
+            总结
           </Button>
         )}
       </Stack>

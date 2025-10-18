@@ -4,6 +4,11 @@ import { debugLog } from "../utils/logger";
 
 export type TodoPriority = "high" | "medium" | "low";
 export type TodoStatus = "notStarted" | "inProgress" | "submitted" | "completed";
+export type TodoQuadrant =
+	| "urgentImportant"
+	| "notUrgentImportant"
+	| "urgentNotImportant"
+	| "notUrgentNotImportant";
 
 export interface TodoTimeEntry {
 	id: string;
@@ -17,6 +22,7 @@ export interface TodoTask {
 	title: string;
 	description?: string;
 	notes?: string;
+	reflection?: string;
 	completed: boolean;
 	priority: TodoPriority;
 	status?: TodoStatus;
@@ -29,6 +35,7 @@ export interface TodoTask {
 	completedAt?: string;
 	reminderSent?: boolean;
 	timeEntries?: TodoTimeEntry[];
+	quadrant?: TodoQuadrant;
 }
 
 export interface TodoFilterState {
@@ -75,6 +82,7 @@ export const addTodoAtom = atom(
 			updatedAt: now,
 			...task,
 			timeEntries: task.timeEntries ?? [],
+			quadrant: task.quadrant ?? "urgentImportant",
 		};
 
 		debugLog("➕ 新建任务:", {
@@ -292,23 +300,6 @@ export const removeCategoryAtom = atom(null, (get, set, category: string) => {
 			...todo,
 			category: todo.category === category ? undefined : todo.category,
 		})),
-	);
-});
-
-export const bulkCompleteAtom = atom(null, (get, set, ids: string[]) => {
-	const setIds = new Set(ids);
-	set(
-		todosAtom,
-		get(todosAtom).map((todo) =>
-			setIds.has(todo.id)
-				? {
-						...todo,
-						completed: true,
-						completedAt: todo.completedAt ?? new Date().toISOString(),
-						updatedAt: new Date().toISOString(),
-					}
-				: todo,
-		),
 	);
 });
 

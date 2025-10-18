@@ -54,6 +54,7 @@ const TodoToolbar: React.FC<TodoToolbarProps> = ({
             startIcon={<AddIcon />}
             onClick={onAddTask}
             size="small"
+            sx={{ width: '100px' }}
           >
             新建任务
           </Button>
