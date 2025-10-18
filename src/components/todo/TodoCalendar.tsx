@@ -80,16 +80,42 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
     };
 
     tasks.forEach(task => {
-      if (task.dueDate) {
-        const dueDate = new Date(task.dueDate);
-        pushTask(dueDate, task);
+      // 情况1：有开始时间和结束时间 - 显示在时间范围内
+      if (task.dueDate && task.dueDateEnd) {
+        const startDate = new Date(task.dueDate);
+        const endDate = new Date(task.dueDateEnd);
+        
+        // 确保日期有效
+        if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
+          // 在开始日期到结束日期之间显示任务
+          let currentDate = new Date(startDate);
+          while (currentDate <= endDate) {
+            pushTask(currentDate, task);
+            currentDate = addDays(currentDate, 1);
+          }
+        }
       }
-
-      if (task.reminder) {
+      // 情况2：只有截止时间 - 从创建日期到截止日期显示
+      else if (task.dueDate) {
+        const dueDate = new Date(task.dueDate);
+        const createdDate = new Date(task.createdAt);
+        
+        if (!Number.isNaN(dueDate.getTime()) && !Number.isNaN(createdDate.getTime())) {
+          // 从创建日期到截止日期显示任务
+          let currentDate = new Date(createdDate);
+          while (currentDate <= dueDate) {
+            pushTask(currentDate, task);
+            currentDate = addDays(currentDate, 1);
+          }
+        }
+      }
+      // 情况3：只有提醒时间 - 显示在提醒日期
+      else if (task.reminder) {
         const reminderDate = new Date(task.reminder);
         pushTask(reminderDate, task);
       }
 
+      // 时间记录仍然显示在对应日期
       const entries = task.timeEntries ?? [];
       entries.forEach(entry => {
         const entryDate = new Date(entry.date);

@@ -44,6 +44,7 @@ export interface FormValues {
 	priority: TodoPriority;
 	completed: boolean;
 	dueDate?: string;
+	dueDateEnd?: string; // 新增：截止时间结束
 	reminder?: string;
 	tags: string[];
 	category?: string;
@@ -97,6 +98,7 @@ const createDefaultValues = (): FormValues => ({
 	tags: [],
 	status: "notStarted",
 	dueDate: undefined,
+	dueDateEnd: undefined,
 	reminder: undefined,
 });
 
@@ -132,6 +134,7 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 				priority: initialTask.priority,
 				completed: initialTask.completed,
 				dueDate: initialTask.dueDate,
+				dueDateEnd: initialTask.dueDateEnd, // 从任务数据中读取
 				reminder: initialTask.reminder,
 				tags: initialTask.tags,
 				category: initialTask.category,
@@ -274,7 +277,7 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 						</TextField>
 
 						<DateTimePicker
-							label="截止时间"
+							label="开始时间"
 							value={isoToDayjs(values.dueDate)}
 							onChange={(newValue) => {
 								const isoValue = dayjsToIso(newValue, { fallback: "endOfDay" });
@@ -282,6 +285,20 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 							}}
 							slotProps={{
 								textField: { fullWidth: true },
+							}}
+						/>
+						<DateTimePicker
+							label="截止时间（结束）"
+							value={isoToDayjs(values.dueDateEnd)}
+							onChange={(newValue) => {
+								const isoValue = dayjsToIso(newValue, { fallback: "endOfDay" });
+								setValues((prev) => ({ ...prev, dueDateEnd: isoValue }));
+							}}
+							slotProps={{
+								textField: { 
+									fullWidth: true,
+									helperText: "可选，用于设置任务的时间范围",
+								},
 							}}
 						/>
 						<DateTimePicker

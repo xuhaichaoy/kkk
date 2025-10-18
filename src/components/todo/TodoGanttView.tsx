@@ -48,8 +48,27 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 		return tasks.map((task) => {
 			const created = coerceDate(task.createdAt) ?? new Date();
 			const dueRaw = coerceDate(task.dueDate);
-			const startReference = dueRaw ?? created;
-			const endReference = dueRaw ?? addDays(created, 1);
+			const dueEndRaw = coerceDate(task.dueDateEnd);
+			
+			// 情况1：有开始时间和结束时间
+			let startReference: Date;
+			let endReference: Date;
+			
+			if (dueRaw && dueEndRaw) {
+				startReference = dueRaw;
+				endReference = dueEndRaw;
+			}
+			// 情况2：只有截止时间 - 从创建日期到截止日期
+			else if (dueRaw) {
+				startReference = created;
+				endReference = dueRaw;
+			}
+			// 情况3：没有时间信息 - 使用创建日期
+			else {
+				startReference = created;
+				endReference = addDays(created, 1);
+			}
+			
 			const status = resolveTaskStatus(task);
 			return {
 				...task,

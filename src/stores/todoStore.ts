@@ -27,6 +27,7 @@ export interface TodoTask {
 	priority: TodoPriority;
 	status?: TodoStatus;
 	dueDate?: string; // ISO string
+	dueDateEnd?: string; // ISO string - 截止时间结束
 	reminder?: string; // ISO string
 	tags: string[];
 	category?: string;
