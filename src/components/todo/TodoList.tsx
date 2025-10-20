@@ -13,6 +13,7 @@ import {
 import { format } from "date-fns";
 import React, { type ChangeEvent, type MouseEvent } from "react";
 import type { TodoTask } from "../../stores/todoStore";
+import { getTaskDueDate } from "../../utils/todoUtils";
 
 interface TodoListProps {
 	tasks: TodoTask[];
@@ -30,9 +31,9 @@ const priorityColorMap: Record<string, string> = {
 	low: "info",
 };
 
-const formatDate = (date?: string) => {
+const formatDate = (date?: string | Date | null) => {
 	if (!date) return undefined;
-	const parsed = new Date(date);
+	const parsed = date instanceof Date ? date : new Date(date);
 	if (Number.isNaN(parsed.getTime())) return undefined;
 	return format(parsed, "MM-dd HH:mm");
 };
@@ -47,7 +48,7 @@ const TodoList = ({
 	onLogTime,
 }: TodoListProps) => {
 	const renderTask = (task: TodoTask) => {
-		const dueLabel = formatDate(task.dueDate);
+		const dueLabel = formatDate(getTaskDueDate(task));
 		const reminderLabel = formatDate(task.reminder);
 		const isSelected = selectedId === task.id;
 		const totalMinutes = (task.timeEntries ?? []).reduce(

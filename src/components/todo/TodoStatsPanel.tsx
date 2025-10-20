@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { Box, Card, CardContent, Grid, LinearProgress, Stack, Typography } from '@mui/material';
-import { differenceInCalendarWeeks, isBefore, isSameDay, isSameWeek, isToday, parseISO } from 'date-fns';
+import { differenceInCalendarWeeks, isBefore, isSameDay, isSameWeek, isToday } from 'date-fns';
 import { TodoTask } from '../../stores/todoStore';
+import { getTaskDueDate } from '../../utils/todoUtils';
 
 interface TodoStatsPanelProps {
   tasks: TodoTask[];
@@ -13,9 +14,18 @@ const TodoStatsPanel: React.FC<TodoStatsPanelProps> = ({ tasks }) => {
     const total = tasks.length;
     const completed = tasks.filter(task => task.completed).length;
     const active = tasks.filter(task => !task.completed).length;
-    const today = tasks.filter(task => task.dueDate && isToday(parseISO(task.dueDate))).length;
-    const thisWeek = tasks.filter(task => task.dueDate && isSameWeek(parseISO(task.dueDate), now)).length;
-    const overdue = tasks.filter(task => task.dueDate && !task.completed && isBefore(parseISO(task.dueDate), now)).length;
+    const today = tasks.filter(task => {
+      const due = getTaskDueDate(task);
+      return due ? isToday(due) : false;
+    }).length;
+    const thisWeek = tasks.filter(task => {
+      const due = getTaskDueDate(task);
+      return due ? isSameWeek(due, now) : false;
+    }).length;
+    const overdue = tasks.filter(task => {
+      const due = getTaskDueDate(task);
+      return due ? !task.completed && isBefore(due, now) : false;
+    }).length;
 
     let longestStreak = 0;
     let currentStreak = 0;
@@ -44,10 +54,13 @@ const TodoStatsPanel: React.FC<TodoStatsPanelProps> = ({ tasks }) => {
     const completionRate = total === 0 ? 0 : Math.round((completed / total) * 100);
 
     const nextDue = tasks
-      .filter(task => task.dueDate && !task.completed)
-      .map(task => ({ task, due: new Date(task.dueDate!) }))
-      .filter(item => !Number.isNaN(item.due.getTime()))
-      .sort((a, b) => a.due.getTime() - b.due.getTime())[0]?.task;
+      .map(task => ({ task, due: getTaskDueDate(task) }))
+      .filter(item => item.due && !item.task.completed)
+      .filter((item): item is { task: TodoTask; due: Date } => {
+        if (!item.due) return false;
+        return !Number.isNaN(item.due.getTime());
+      })
+      .sort((a, b) => a.due.getTime() - b.due.getTime())[0] ?? null;
 
     return {
       total,
@@ -107,9 +120,9 @@ const TodoStatsPanel: React.FC<TodoStatsPanelProps> = ({ tasks }) => {
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {stats.nextDue
-                ? `${stats.nextDue.title}${
-                    stats.nextDue.dueDate && !isSameDay(new Date(stats.nextDue.dueDate), new Date())
-                      ? ` · ${new Date(stats.nextDue.dueDate).toLocaleString()}`
+                ? `${stats.nextDue.task.title}${
+                    stats.nextDue.due && !isSameDay(stats.nextDue.due, new Date())
+                      ? ` · ${stats.nextDue.due.toLocaleString()}`
                       : ''
                   }`
                 : '暂无即将到来的任务'}

@@ -19,7 +19,7 @@ import {
 import { differenceInHours, format, isBefore } from "date-fns";
 import React, { type FC } from "react";
 import type { TodoTask } from "../../stores/todoStore";
-import { resolveTaskStatus, statusDisplayMap } from "../../utils/todoUtils";
+import { getTaskDueDate, resolveTaskStatus, statusDisplayMap } from "../../utils/todoUtils";
 
 interface TodoSelectedDatePanelProps {
 	date: Date;
@@ -142,7 +142,7 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 							sx={{ display: "flex", flexDirection: "column", gap: 1 }}
 						>
 						{tasks.map((task) => {
-							const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+							const dueDate = getTaskDueDate(task);
 							const isDueDateValid =
 								dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
 							const dueLabel = isDueDateValid

@@ -18,7 +18,7 @@ import { format } from "date-fns";
 import type { FC } from "react";
 import React, { useMemo, useState } from "react";
 import type { TodoStatus, TodoTask } from "../../stores/todoStore";
-import { resolveTaskStatus } from "../../utils/todoUtils";
+import { getTaskDueDate, resolveTaskStatus } from "../../utils/todoUtils";
 
 interface TodoKanbanBoardProps {
 	tasks: TodoTask[];
@@ -79,12 +79,8 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 			}
 
 			list.sort((a, b) => {
-				const aDate = a.dueDate
-					? new Date(a.dueDate).getTime()
-					: Number.POSITIVE_INFINITY;
-				const bDate = b.dueDate
-					? new Date(b.dueDate).getTime()
-					: Number.POSITIVE_INFINITY;
+				const aDate = getTaskDueDate(a)?.getTime() ?? Number.POSITIVE_INFINITY;
+				const bDate = getTaskDueDate(b)?.getTime() ?? Number.POSITIVE_INFINITY;
 				if (aDate !== bDate) return aDate - bDate;
 				return (
 					new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
@@ -148,9 +144,8 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 	};
 
 	const renderTaskCard = (task: TodoTask, index: number) => {
-		const dueDate = task.dueDate ? new Date(task.dueDate) : null;
-		const isDueValid =
-			dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
+		const dueDate = getTaskDueDate(task);
+		const isDueValid = dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
 
 		return (
 			<Draggable key={task.id} draggableId={task.id} index={index}>

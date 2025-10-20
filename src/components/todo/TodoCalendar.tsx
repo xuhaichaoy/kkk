@@ -31,7 +31,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import type { TodoTask } from '../../stores/todoStore';
-import { compareByDueAndPriority } from '../../utils/todoUtils';
+import { compareByDueAndPriority, getTaskDateRange, getTaskDueDate } from '../../utils/todoUtils';
 
 interface TodoCalendarProps {
   tasks: TodoTask[];
@@ -41,7 +41,7 @@ interface TodoCalendarProps {
   onMonthChange: (date: Date) => void;
 }
 
-const dayLabels = ['日', '一', '二', '三', '四', '五', '六'];
+const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSelectDate, onMonthChange }) => {
   const theme = useTheme();
@@ -80,37 +80,16 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
     };
 
     tasks.forEach(task => {
-      // 情况1：有开始时间和结束时间 - 显示在时间范围内
-      if (task.dueDate && task.dueDateEnd) {
-        const startDate = new Date(task.dueDate);
-        const endDate = new Date(task.dueDateEnd);
-        
-        // 确保日期有效
-        if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
-          // 在开始日期到结束日期之间显示任务
-          let currentDate = new Date(startDate);
-          while (currentDate <= endDate) {
-            pushTask(currentDate, task);
-            currentDate = addDays(currentDate, 1);
-          }
+      const range = getTaskDateRange(task);
+
+      if (range) {
+        let currentDate = startOfDay(range.start);
+        const endDate = startOfDay(range.end);
+        while (currentDate <= endDate) {
+          pushTask(currentDate, task);
+          currentDate = addDays(currentDate, 1);
         }
-      }
-      // 情况2：只有截止时间 - 从创建日期到截止日期显示
-      else if (task.dueDate) {
-        const dueDate = new Date(task.dueDate);
-        const createdDate = new Date(task.createdAt);
-        
-        if (!Number.isNaN(dueDate.getTime()) && !Number.isNaN(createdDate.getTime())) {
-          // 从创建日期到截止日期显示任务
-          let currentDate = new Date(createdDate);
-          while (currentDate <= dueDate) {
-            pushTask(currentDate, task);
-            currentDate = addDays(currentDate, 1);
-          }
-        }
-      }
-      // 情况3：只有提醒时间 - 显示在提醒日期
-      else if (task.reminder) {
+      } else if (task.reminder) {
         const reminderDate = new Date(task.reminder);
         pushTask(reminderDate, task);
       }
@@ -134,7 +113,6 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
     const key = format(date, 'yyyy-MM-dd');
     const dayTasks = tasksByDay.get(key) ?? [];
     const isCurrentMonth = isSameMonth(date, month);
-    const isSelected = isSameDay(selectedDate, date);
     const isCurrent = isToday(date);
     const hasTasks = dayTasks.length > 0;
 
@@ -165,8 +143,8 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
               {isCurrent ? (
                 <Box
                   sx={{
-                    width: 28,
-                    height: 28,
+                    width: 24,
+                    height: 24,
                     borderRadius: '50%',
                     backgroundColor: 'primary.main',
                     display: 'flex',
@@ -179,7 +157,7 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
                     sx={{
                       fontWeight: 600,
                       color: '#fff',
-                      fontSize: '0.875rem',
+                      fontSize: '0.8rem',
                     }}
                   >
                     {format(date, 'd')}
@@ -189,9 +167,14 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
                 <Typography
                   variant="body2"
                   sx={{
-                    fontWeight: isSelected ? 600 : 400,
+                    width: 24,
+                    height: 24,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 600,
                     color: 'text.primary',
-                    fontSize: '0.875rem',
+                    fontSize: '0.8rem',
                   }}
                 >
                   {format(date, 'd')}
@@ -213,19 +196,13 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
           <Stack spacing={0.3} alignItems="flex-start" sx={{ flex: 1, width: '100%', overflow: 'hidden' }}>
             {dayTasks
               .sort((a, b) => {
-                const orderA = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
-                const orderB = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+                const orderA = getTaskDueDate(a)?.getTime() ?? Number.POSITIVE_INFINITY;
+                const orderB = getTaskDueDate(b)?.getTime() ?? Number.POSITIVE_INFINITY;
                 return orderA - orderB;
               })
               .slice(0, 4)
               .map(task => {
-                const getTaskColor = () => {
-                  if (task.completed) return '#4caf50';
-                  if (task.priority === 'high') return '#ef5350';
-                  if (task.priority === 'medium') return '#ffa726';
-                  return '#42a5f5';
-                };
-                
+                const dueDate = getTaskDueDate(task);
                 const getTaskBgColor = () => {
                   if (task.completed) return alpha('#4caf50', 0.12);
                   if (task.priority === 'high') return alpha('#ef5350', 0.12);
@@ -233,7 +210,7 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
                   return alpha('#42a5f5', 0.12);
                 };
 
-                const taskTime = task.dueDate ? format(new Date(task.dueDate), 'HH:mm') : '';
+                const taskTime = dueDate ? format(dueDate, 'HH:mm') : '';
 
                 return (
                   <Tooltip key={task.id} title={task.title} placement="top" arrow disableInteractive>
@@ -244,7 +221,6 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
                         py: 0.3,
                         borderRadius: 0.8,
                         backgroundColor: getTaskBgColor(),
-                        borderLeft: `3px solid ${getTaskColor()}`,
                         display: 'flex',
                         alignItems: 'center',
                         gap: 0.5,
@@ -306,8 +282,7 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: 'background.default',
-        // margin: '-24px', // 抵消Container的padding
+        backgroundColor: 'background.paper',
       }}
     >
       {/* 顶部工具栏 */}
@@ -318,8 +293,6 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
         sx={{
           px: 3,
           py: 2,
-          borderBottom: '1px solid',
-          borderColor: 'divider',
         }}
       >
         <Typography variant="h5" fontWeight={600}>
@@ -416,7 +389,6 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
         </Stack>
       </Stack>
 
-      {/* 星期标题 */}
       <Box
         sx={{
           display: 'grid',
@@ -432,8 +404,6 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
             sx={{
               py: 1.5,
               textAlign: 'center',
-              borderRight: '1px solid',
-              borderColor: 'divider',
               '&:last-child': {
                 borderRight: 'none',
               },
@@ -444,7 +414,7 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
               sx={{
                 fontWeight: 500,
                 color: 'text.secondary',
-                fontSize: '0.875rem',
+                fontSize: '0.7rem',
               }}
             >
               {label}
@@ -453,7 +423,6 @@ const TodoCalendar: FC<TodoCalendarProps> = ({ tasks, month, selectedDate, onSel
         ))}
       </Box>
 
-      {/* 日历网格 */}
       <Box
         sx={{
           flex: 1,

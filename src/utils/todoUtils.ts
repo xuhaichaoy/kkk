@@ -17,14 +17,69 @@ import type {
 	TodoTask,
 } from "../stores/todoStore";
 
+const parseDateValue = (value?: string): Date | null => {
+	if (!value) return null;
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const getTaskDateRange = (
+	task: TodoTask,
+): { start: Date; end: Date } | null => {
+	const createdAt = parseDateValue(task.createdAt);
+	const startCandidate = parseDateValue(task.dueDate);
+	const endCandidate = parseDateValue(task.dueDateEnd);
+
+	if (startCandidate && endCandidate) {
+		const start =
+			startCandidate.getTime() <= endCandidate.getTime()
+				? startCandidate
+				: endCandidate;
+		const end =
+			startCandidate.getTime() <= endCandidate.getTime()
+				? endCandidate
+				: startCandidate;
+		return { start, end };
+	}
+
+	const singleDue = startCandidate ?? endCandidate;
+	if (singleDue) {
+		const start = startCandidate ?? createdAt ?? singleDue;
+		const startTime = start.getTime();
+		const endTime = singleDue.getTime();
+
+		if (startTime <= endTime) {
+			return { start, end: singleDue };
+		}
+
+		return { start: singleDue, end: start };
+	}
+
+	return null;
+};
+
+export const getTaskStartDate = (task: TodoTask): Date | null => {
+	const range = getTaskDateRange(task);
+	if (range) return range.start;
+	return parseDateValue(task.reminder) ?? parseDateValue(task.createdAt);
+};
+
+export const getTaskDueDate = (task: TodoTask): Date | null => {
+	const range = getTaskDateRange(task);
+	if (range) return range.end;
+	return parseDateValue(task.reminder);
+};
+
 const priorityOrder: Record<TodoPriority, number> = {
 	high: 0,
 	medium: 1,
 	low: 2,
 };
 
-const dueValue = (task: TodoTask) =>
-	task.dueDate ? new Date(task.dueDate).getTime() : Number.POSITIVE_INFINITY;
+const dueValue = (task: TodoTask) => {
+	const due = getTaskDueDate(task);
+	return due ? due.getTime() : Number.POSITIVE_INFINITY;
+};
 
 export const matchesSearch = (task: TodoTask, search: string) => {
 	if (!search) return true;
@@ -68,11 +123,10 @@ export const matchesFilters = (
 	}
 
 	if (filter.range !== "all") {
-		if (!task.dueDate) {
+		const due = getTaskDueDate(task);
+		if (!due) {
 			return false;
 		}
-		const due = new Date(task.dueDate);
-		if (Number.isNaN(due.getTime())) return false;
 
 		if (filter.range === "today") {
 			if (!isSameDay(due, referenceDate)) return false;
@@ -146,22 +200,22 @@ export const getOverdueTodos = (
 ) =>
 	tasks.filter(
 		(task) =>
-			task.dueDate &&
+			getTaskDueDate(task) &&
 			!task.completed &&
-			isBefore(new Date(task.dueDate), referenceDate),
+			isBefore(getTaskDueDate(task)!, referenceDate),
 	);
 
 export const getTodayTodos = (tasks: TodoTask[], baseDate = startOfToday()) =>
 	tasks.filter(
-		(task) => task.dueDate && isSameDay(new Date(task.dueDate), baseDate),
+		(task) => getTaskDueDate(task) && isSameDay(getTaskDueDate(task)!, baseDate),
 	);
 
 export const getWeekTodos = (tasks: TodoTask[], baseDate = new Date()) => {
 	const start = startOfWeek(baseDate, { weekStartsOn: 1 });
 	const end = endOfWeek(baseDate, { weekStartsOn: 1 });
 	return tasks.filter((task) => {
-		if (!task.dueDate) return false;
-		const due = new Date(task.dueDate);
+		const due = getTaskDueDate(task);
+		if (!due) return false;
 		return due >= start && due <= end;
 	});
 };
@@ -175,12 +229,13 @@ export const getCalendarTodos = (todos: TodoTask[], selectedDate: Date) => {
 	todos.forEach((task) => {
 		if (task.completed) return;
 
-		if (!task.dueDate) {
+		const due = getTaskDueDate(task);
+
+		if (!due) {
 			upcoming.push(task);
 			return;
 		}
 
-		const due = new Date(task.dueDate);
 		if (isBefore(due, selectedStart)) {
 			overdue.push(task);
 		} else {
@@ -223,9 +278,9 @@ const formatDateTime = (value?: string) => {
 	return format(date, "MM月dd日 HH:mm");
 };
 
-const formatDate = (value?: string) => {
+const formatDate = (value?: string | Date | null) => {
 	if (!value) return "";
-	const date = new Date(value);
+	const date = value instanceof Date ? value : new Date(value);
 	if (Number.isNaN(date.getTime())) return "";
 	return format(date, "MM月dd日");
 };
@@ -237,8 +292,9 @@ const buildTaskLines = (tasks: TodoTask[]) =>
 		if (task.category) {
 			parts.push(`分类：${task.category}`);
 		}
-		if (task.dueDate) {
-			parts.push(`截止：${formatDate(task.dueDate)}`);
+		const due = getTaskDueDate(task);
+		if (due) {
+			parts.push(`截止：${formatDate(due)}`);
 		}
 		return `- ${parts.join(" ｜ ")}`;
 	});
@@ -289,8 +345,8 @@ export const generateWeeklyReport = (
 	const upcomingNextWeek = todos.filter(
 		(task) =>
 			!task.completed &&
-			task.dueDate &&
-			isWithinInterval(new Date(task.dueDate), {
+			getTaskDueDate(task) &&
+			isWithinInterval(getTaskDueDate(task)!, {
 				start: nextWeekStart,
 				end: nextWeekEnd,
 			}),
@@ -299,8 +355,8 @@ export const generateWeeklyReport = (
 	const overdue = todos.filter(
 		(task) =>
 			!task.completed &&
-			task.dueDate &&
-			isBefore(new Date(task.dueDate), now),
+			getTaskDueDate(task) &&
+			isBefore(getTaskDueDate(task)!, now),
 	);
 
 	const lines: string[] = [];
@@ -341,10 +397,11 @@ export const generateWeeklyReport = (
 	if (upcomingNextWeek.length > 0) {
 		lines.push("\n【下周计划】");
 		upcomingNextWeek.forEach((task) => {
+			const due = getTaskDueDate(task);
 			lines.push(
-				`- [${priorityLabel[task.priority]}] ${task.title} ｜ 截止：${formatDate(
-					task.dueDate,
-				)}${task.category ? ` ｜ 分类：${task.category}` : ""}`,
+				`- [${priorityLabel[task.priority]}] ${task.title}${
+					due ? ` ｜ 截止：${formatDate(due)}` : ""
+				}${task.category ? ` ｜ 分类：${task.category}` : ""}`,
 			);
 		});
 	}
@@ -352,10 +409,11 @@ export const generateWeeklyReport = (
 	if (overdue.length > 0) {
 		lines.push("\n【需要关注】");
 		overdue.forEach((task) => {
+			const due = getTaskDueDate(task);
 			lines.push(
-				`- [${priorityLabel[task.priority]}] ${task.title} ｜ 已逾期：${formatDate(
-					task.dueDate,
-				)}${task.category ? ` ｜ 分类：${task.category}` : ""}`,
+				`- [${priorityLabel[task.priority]}] ${task.title}${
+					due ? ` ｜ 已逾期：${formatDate(due)}` : ""
+				}${task.category ? ` ｜ 分类：${task.category}` : ""}`,
 			);
 		});
 	}
