@@ -17,10 +17,12 @@ import TodoSidebar, {
 } from "../components/todo/TodoSidebar";
 import { useTodoReminders } from "../hooks/useTodoReminders";
 import {
+	DEFAULT_CATEGORY,
 	addTodoAtom,
-  categoriesAtom,
+	categoriesAtom,
 	clearCompletedAtom,
 	filterAtom,
+	removeCategoryAtom,
 	removeTodoAtom,
 	type TodoStatus,
 	type TodoTask,
@@ -55,6 +57,12 @@ const TodoPage: FC = () => {
 	const todos = useAtomValue(todosAtom);
 	const tags = useAtomValue(tagsAtom);
 	const categories = useAtomValue(categoriesAtom);
+	const categoryOptions = useMemo(() => {
+		const normalized = categories
+			.map((category) => category.trim())
+			.filter((category) => category.length > 0 && category !== DEFAULT_CATEGORY);
+		return Array.from(new Set([DEFAULT_CATEGORY, ...normalized]));
+	}, [categories]);
 
 	const addTodo = useSetAtom(addTodoAtom);
 	const updateTodo = useSetAtom(updateTodoAtom);
@@ -62,6 +70,7 @@ const TodoPage: FC = () => {
 	const toggleTodo = useSetAtom(toggleTodoAtom);
 	const upsertTag = useSetAtom(upsertTagAtom);
 	const upsertCategory = useSetAtom(upsertCategoryAtom);
+	const removeCategory = useSetAtom(removeCategoryAtom);
 	const upsertTimeEntry = useSetAtom(upsertTimeEntryAtom);
 	const removeTimeEntry = useSetAtom(removeTimeEntryAtom);
 	const clearCompleted = useSetAtom(clearCompletedAtom);
@@ -349,6 +358,7 @@ const TodoPage: FC = () => {
 					onViewChange={setSidebarView}
 					categories={categories}
 					onCreateCategory={upsertCategory}
+					onRemoveCategory={removeCategory}
 				/>
 			)}
 			<Box
@@ -427,8 +437,8 @@ const TodoPage: FC = () => {
 					initialTask={editingTask ?? undefined}
 					onClose={() => setFormOpen(false)}
 					onSubmit={handleFormSubmit}
-					allTags={tags}
-					allCategories={categories}
+				allTags={tags}
+				allCategories={categoryOptions}
 					onCreateTag={upsertTag}
 					onCreateCategory={upsertCategory}
 					defaultCategory={currentCategory}

@@ -170,7 +170,7 @@ const TodoWidgetPage: FC = () => {
 		description: "",
 		notes: "",
 		reflection: "",
-		priority: "medium",
+		priority: "none",
 		completed: false,
 		tags: [],
 		reminderSent: false,

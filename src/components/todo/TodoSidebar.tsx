@@ -46,6 +46,7 @@ interface TodoSidebarProps {
 	onViewChange: (view: SidebarView) => void;
 	categories: string[];
 	onCreateCategory: (category: string) => void;
+	onRemoveCategory: (category: string) => void;
 }
 
 const TodoSidebar: FC<TodoSidebarProps> = ({
@@ -54,6 +55,7 @@ const TodoSidebar: FC<TodoSidebarProps> = ({
 	onViewChange,
 	categories,
 	onCreateCategory,
+	onRemoveCategory,
 }) => {
 	const theme = useTheme();
 	const [listsExpanded, setListsExpanded] = useState(true);
@@ -98,6 +100,7 @@ const TodoSidebar: FC<TodoSidebarProps> = ({
 		icon: React.ReactNode,
 		label: string,
 		count?: number,
+		onDelete?: () => void,
 	) => {
 		const isSelected = selectedView === view;
 		return (
@@ -143,6 +146,27 @@ const TodoSidebar: FC<TodoSidebarProps> = ({
 						}}
 					/>
 				)}
+				{onDelete && (
+					<Tooltip title="删除列表" arrow>
+						<IconButton
+							size="small"
+							onClick={(event) => {
+								event.stopPropagation();
+								onDelete();
+							}}
+							sx={{
+								ml: 0.5,
+								color: "text.disabled",
+								"&:hover": {
+									color: theme.palette.error.main,
+									backgroundColor: alpha(theme.palette.error.main, 0.08),
+								},
+							}}
+						>
+							<DeleteOutlineIcon fontSize="small" />
+						</IconButton>
+					</Tooltip>
+				)}
 			</ListItemButton>
 		);
 	};
@@ -164,7 +188,26 @@ const TodoSidebar: FC<TodoSidebarProps> = ({
 		resetNewListState();
 	};
 
-	const handleNewListKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+	const handleRemoveCategory = async (category: string) => {
+		let confirmed = true;
+		if (typeof window !== "undefined" && typeof window.confirm === "function") {
+			const result = window.confirm(`确定要删除列表「${category}」吗？`);
+			confirmed = result;
+		}
+		if (!confirmed) {
+			return;
+		}
+		const normalized = category.trim();
+		if (!normalized) return;
+		onRemoveCategory(normalized);
+		if (selectedView === `category:${category}`) {
+			onViewChange("welcome");
+		}
+	};
+
+	const handleNewListKeyDown = (
+		event: React.KeyboardEvent<HTMLInputElement>,
+	) => {
 		if (event.key === "Enter") {
 			event.preventDefault();
 			commitNewList();
@@ -276,14 +319,15 @@ const TodoSidebar: FC<TodoSidebarProps> = ({
 							"👋 欢迎",
 							welcomeCount,
 						)}
-						{categories.map((category) =>
-							renderListItem(
-								`category:${category}` as SidebarView,
-								<FolderOpenIcon fontSize="small" />,
-								category,
-								categoryCounts[category],
-							),
-						)}
+				{categories.map((category) =>
+					renderListItem(
+						`category:${category}` as SidebarView,
+						<FolderOpenIcon fontSize="small" />,
+						category,
+						categoryCounts[category],
+						() => handleRemoveCategory(category),
+					),
+				)}
 						{isCreatingList && (
 							<Box sx={{ px: 1.5, py: 0.75 }}>
 								<TextField

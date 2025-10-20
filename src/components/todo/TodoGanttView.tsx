@@ -8,7 +8,7 @@ import {
 import type { FC } from "react";
 import React, { useMemo } from "react";
 import type { TodoStatus, TodoTask } from "../../stores/todoStore";
-import { resolveTaskStatus } from "../../utils/todoUtils";
+import { getTaskDateRange, resolveTaskStatus } from "../../utils/todoUtils";
 
 const DAY_WIDTH = 72;
 const LABEL_WIDTH = 160;
@@ -45,41 +45,36 @@ const coerceDate = (value?: string): Date | null => {
 
 const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 	const normalizedTasks = useMemo<NormalizedTask[]>(() => {
-		return tasks.map((task) => {
-			const created = coerceDate(task.createdAt) ?? new Date();
-			const dueRaw = coerceDate(task.dueDate);
-			const dueEndRaw = coerceDate(task.dueDateEnd);
-			
-			// 情况1：有开始时间和结束时间
-			let startReference: Date;
-			let endReference: Date;
-			
-			if (dueRaw && dueEndRaw) {
-				startReference = dueRaw;
-				endReference = dueEndRaw;
-			}
-			// 情况2：只有截止时间 - 从创建日期到截止日期
-			else if (dueRaw) {
-				startReference = created;
-				endReference = dueRaw;
-			}
-			// 情况3：没有时间信息 - 使用创建日期
-			else {
-				startReference = created;
-				endReference = addDays(created, 1);
-			}
-			
-			const status = resolveTaskStatus(task);
-			return {
-				...task,
-				status,
-				startDay: startOfDay(startReference),
-				endDay: startOfDay(addDays(endReference, 1)),
-				originalStart: startReference,
-				originalEnd: endReference,
-				hasDueDate: Boolean(dueRaw),
-			};
-		});
+	return tasks.map((task) => {
+		const created = coerceDate(task.createdAt) ?? new Date();
+		const reminder = coerceDate(task.reminder);
+		const range = getTaskDateRange(task);
+		
+		let startReference: Date;
+		let endReference: Date;
+		
+		if (range) {
+			startReference = range.start;
+			endReference = range.end;
+		} else if (reminder) {
+			startReference = reminder;
+			endReference = reminder;
+		} else {
+			startReference = created;
+			endReference = addDays(created, 1);
+		}
+		
+		const status = resolveTaskStatus(task);
+		return {
+			...task,
+			status,
+			startDay: startOfDay(startReference),
+			endDay: startOfDay(addDays(endReference, 1)),
+			originalStart: startReference,
+			originalEnd: endReference,
+			hasDueDate: Boolean(range ?? reminder),
+		};
+	});
 	}, [tasks]);
 
 	const timelineBounds = useMemo(() => {
@@ -176,8 +171,8 @@ const TodoGanttView: FC<{ tasks: TodoTask[] }> = ({ tasks }) => {
 						</Typography>
 						<Typography variant="caption" color="text.secondary">
 							{task.hasDueDate
-								? `截止：${format(task.originalEnd, "MM-dd HH:mm")}`
-								: "截止：未设置"}
+								? `结束：${format(task.originalEnd, "MM-dd HH:mm")}`
+								: "结束：未设置"}
 						</Typography>
 					</Stack>
 				}

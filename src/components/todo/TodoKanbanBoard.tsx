@@ -17,8 +17,8 @@ import {
 import { format } from "date-fns";
 import type { FC } from "react";
 import React, { useMemo, useState } from "react";
-import type { TodoStatus, TodoTask } from "../../stores/todoStore";
-import { getTaskDueDate, resolveTaskStatus } from "../../utils/todoUtils";
+import type { TodoPriority, TodoStatus, TodoTask } from "../../stores/todoStore";
+import { getTaskDateRange, resolveTaskStatus } from "../../utils/todoUtils";
 
 interface TodoKanbanBoardProps {
 	tasks: TodoTask[];
@@ -79,9 +79,11 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 			}
 
 			list.sort((a, b) => {
-				const aDate = getTaskDueDate(a)?.getTime() ?? Number.POSITIVE_INFINITY;
-				const bDate = getTaskDueDate(b)?.getTime() ?? Number.POSITIVE_INFINITY;
-				if (aDate !== bDate) return aDate - bDate;
+				const rangeA = getTaskDateRange(a);
+				const rangeB = getTaskDateRange(b);
+				const startA = rangeA ? rangeA.start.getTime() : Number.POSITIVE_INFINITY;
+				const startB = rangeB ? rangeB.start.getTime() : Number.POSITIVE_INFINITY;
+				if (startA !== startB) return startA - startB;
 				return (
 					new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
 				);
@@ -113,15 +115,17 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 	};
 
 	const getPriorityIcon = (priority: string) => {
-		const colors = {
+		const colors: Record<string, string> = {
 			high: "#ef4444",
 			medium: "#f97316",
 			low: "#3b82f6",
+			none: "#9ca3af",
 		};
-		const labels = {
+		const labels: Record<string, string> = {
 			high: "高",
 			medium: "中",
 			low: "低",
+			none: "无",
 		};
 		return (
 			<Box
@@ -143,9 +147,24 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 		);
 	};
 
-	const renderTaskCard = (task: TodoTask, index: number) => {
-		const dueDate = getTaskDueDate(task);
-		const isDueValid = dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
+const renderTaskCard = (task: TodoTask, index: number) => {
+  const priority = (task.priority ?? "none") as TodoPriority;
+  const range = getTaskDateRange(task);
+  const scheduleLabel = range
+			? (() => {
+				const sameDay = format(range.start, "yyyy-MM-dd") === format(range.end, "yyyy-MM-dd");
+				if (sameDay) {
+					const startTime = format(range.start, "HH:mm");
+					const endTime = format(range.end, "HH:mm");
+					const dayLabel = format(range.start, "MM-dd");
+					if (startTime === endTime) {
+						return startTime === "00:00" ? dayLabel : `${dayLabel} ${startTime}`;
+					}
+					return `${dayLabel} ${startTime} ~ ${endTime}`;
+				}
+				return `${format(range.start, "MM-dd")} ~ ${format(range.end, "MM-dd")}`;
+			})()
+			: undefined;
 
 		return (
 			<Draggable key={task.id} draggableId={task.id} index={index}>
@@ -190,19 +209,19 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 								justifyContent="space-between"
 								alignItems="center"
 							>
-								<Stack direction="row" spacing={1} alignItems="center">
-									{getPriorityIcon(task.priority)}
-									{isDueValid && (
-										<Typography
-											variant="caption"
-											sx={{
-												color: "text.secondary",
-												fontSize: "0.75rem",
-											}}
-										>
-											截止 {format(isDueValid, "MM-dd HH:mm")}
-										</Typography>
-									)}
+                <Stack direction="row" spacing={1} alignItems="center">
+                  {getPriorityIcon(priority)}
+								{scheduleLabel && (
+									<Typography
+										variant="caption"
+										sx={{
+											color: "text.secondary",
+											fontSize: "0.75rem",
+										}}
+									>
+										{scheduleLabel}
+									</Typography>
+								)}
 								</Stack>
 								<AccessTimeIcon
 									sx={{

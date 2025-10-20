@@ -1,13 +1,17 @@
 import AddIcon from "@mui/icons-material/Add";
-import { Box, Button } from "@mui/material";
+import SwapVertIcon from "@mui/icons-material/SwapVert";
+import { Box, Button, IconButton, Stack, Tooltip } from "@mui/material";
 import { useAtomValue, useSetAtom } from "jotai";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import PageHeader from "../components/common/PageHeader";
 import TodoFormDialog, {
 	type FormValues,
 } from "../components/todo/TodoFormDialog";
-import TodoEisenhowerMatrix from "../components/todo/TodoEisenhowerMatrix";
+import TodoEisenhowerMatrix, {
+	type TodoEisenhowerMatrixHandles,
+} from "../components/todo/TodoEisenhowerMatrix";
 import {
+	DEFAULT_CATEGORY,
 	addTodoAtom,
 	categoriesAtom,
 	tagsAtom,
@@ -21,9 +25,16 @@ import {
 } from "../stores/todoStore";
 
 const TodoMatrixPage: React.FC = () => {
+	const matrixRef = useRef<TodoEisenhowerMatrixHandles>(null);
 	const todos = useAtomValue(todosAtom);
 	const tags = useAtomValue(tagsAtom);
 	const categories = useAtomValue(categoriesAtom);
+	const categoryOptions = useMemo(() => {
+		const normalized = categories
+			.map((category) => category.trim())
+			.filter((category) => category.length > 0 && category !== DEFAULT_CATEGORY);
+		return Array.from(new Set([DEFAULT_CATEGORY, ...normalized]));
+	}, [categories]);
 
 	const addTodo = useSetAtom(addTodoAtom);
 	const updateTodo = useSetAtom(updateTodoAtom);
@@ -100,15 +111,20 @@ const TodoMatrixPage: React.FC = () => {
 
 	const handlePriorityChange = useCallback(
 		(taskId: string, priority?: TodoPriority) => {
+			const nextPriority: TodoPriority = priority ?? "none";
 			updateTodo({
 				id: taskId,
 				changes: {
-					priority,
+					priority: nextPriority,
 				},
 			});
 		},
 		[updateTodo],
 	);
+
+	const handleOpenQuadrantLayout = useCallback(() => {
+		matrixRef.current?.openQuadrantLayoutDialog();
+	}, []);
 
 	return (
 		<Box
@@ -130,14 +146,25 @@ const TodoMatrixPage: React.FC = () => {
 				<PageHeader
 					title="Eisenhower Matrix"
 					action={
-						<Button
-							variant="contained"
-							startIcon={<AddIcon />}
-							onClick={handleCreateTask}
-							sx={{ borderRadius: 2 }}
-						>
-							新建任务
-						</Button>
+						<Stack direction="row" spacing={1} alignItems="center">
+							<Tooltip title="调整象限顺序">
+								<IconButton
+									size="small"
+									onClick={handleOpenQuadrantLayout}
+									aria-label="调整象限顺序"
+								>
+									<SwapVertIcon fontSize="small" />
+								</IconButton>
+							</Tooltip>
+							<Button
+								variant="contained"
+								startIcon={<AddIcon />}
+								onClick={handleCreateTask}
+								sx={{ borderRadius: 2 }}
+							>
+								新建任务
+							</Button>
+						</Stack>
 					}
 				/>
 			</Box>
@@ -151,6 +178,7 @@ const TodoMatrixPage: React.FC = () => {
 				}}
 			>
 				<TodoEisenhowerMatrix
+					ref={matrixRef}
 					tasks={todos}
 					onToggleComplete={handleToggleComplete}
 					onPriorityChange={handlePriorityChange}
@@ -164,7 +192,7 @@ const TodoMatrixPage: React.FC = () => {
 				onClose={handleCloseForm}
 				onSubmit={handleFormSubmit}
 				allTags={tags}
-				allCategories={categories}
+				allCategories={categoryOptions}
 				onCreateTag={upsertTag}
 				onCreateCategory={upsertCategory}
 			/>

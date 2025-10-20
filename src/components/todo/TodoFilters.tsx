@@ -22,6 +22,7 @@ const priorityLabels: Record<TodoPriority, string> = {
   high: '高',
   medium: '中',
   low: '低',
+  none: '未设置',
 };
 
 interface TodoFiltersProps {
@@ -96,7 +97,7 @@ const TodoFilters: React.FC<TodoFiltersProps> = ({ open, value, onChange, availa
                 aria-label="优先级筛选器"
                 size="small"
               >
-                {(['high', 'medium', 'low'] as TodoPriority[]).map(priority => (
+                {(['high', 'medium', 'low', 'none'] as TodoPriority[]).map(priority => (
                   <ToggleButton key={priority} value={priority} aria-label={priority}>
                     {priorityLabels[priority]}
                   </ToggleButton>

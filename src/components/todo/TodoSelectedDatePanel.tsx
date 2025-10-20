@@ -18,8 +18,15 @@ import {
 } from "@mui/material";
 import { differenceInHours, format, isBefore } from "date-fns";
 import React, { type FC } from "react";
-import type { TodoTask } from "../../stores/todoStore";
-import { getTaskDueDate, resolveTaskStatus, statusDisplayMap } from "../../utils/todoUtils";
+import type { TodoPriority, TodoTask } from "../../stores/todoStore";
+import { getTaskDateRange, resolveTaskStatus, statusDisplayMap } from "../../utils/todoUtils";
+
+const priorityAvatarMeta: Record<TodoPriority, { bg: string; label: string; text?: string }> = {
+	high: { bg: "error.main", label: "高", text: "#fff" },
+	medium: { bg: "warning.main", label: "中", text: "#fff" },
+	low: { bg: "info.main", label: "低", text: "#fff" },
+	none: { bg: "grey.500", label: "无", text: "#fff" },
+};
 
 interface TodoSelectedDatePanelProps {
 	date: Date;
@@ -141,33 +148,45 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 							disablePadding
 							sx={{ display: "flex", flexDirection: "column", gap: 1 }}
 						>
-						{tasks.map((task) => {
-							const dueDate = getTaskDueDate(task);
-							const isDueDateValid =
-								dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
-							const dueLabel = isDueDateValid
-								? format(isDueDateValid, "MM-dd HH:mm")
-								: undefined;
-							const totalMinutes = (task.timeEntries ?? []).reduce(
-								(sum, entry) => sum + entry.durationMinutes,
-								0,
-							);
-								const now = new Date();
-								const isOverdue = Boolean(
-									isDueDateValid &&
-										!task.completed &&
-										isBefore(isDueDateValid, now),
-								);
-								const hoursUntilDue = isDueDateValid
-									? differenceInHours(isDueDateValid, now)
-									: null;
-								const isDueSoon = Boolean(
-									isDueDateValid &&
-										!task.completed &&
-										!isOverdue &&
-										hoursUntilDue !== null &&
-										hoursUntilDue <= 24,
-								);
+		{tasks.map((task) => {
+			const priority = (task.priority ?? "none") as TodoPriority;
+			const range = getTaskDateRange(task);
+			const dueLabel = range
+				? (() => {
+					const sameDay = format(range.start, "yyyy-MM-dd") === format(range.end, "yyyy-MM-dd");
+					if (sameDay) {
+						const startTime = format(range.start, "HH:mm");
+						const endTime = format(range.end, "HH:mm");
+						const dayLabel = format(range.start, "MM-dd");
+						if (startTime === endTime) {
+							return startTime === "00:00" ? dayLabel : `${dayLabel} ${startTime}`;
+						}
+						return `${dayLabel} ${startTime} ~ ${endTime}`;
+					}
+					return `${format(range.start, "MM-dd")} ~ ${format(range.end, "MM-dd")}`;
+				})()
+				: undefined;
+			const rangeEnd = range?.end ?? null;
+			const totalMinutes = (task.timeEntries ?? []).reduce(
+				(sum, entry) => sum + entry.durationMinutes,
+				0,
+			);
+				const now = new Date();
+				const isOverdue = Boolean(
+					rangeEnd &&
+						!task.completed &&
+						isBefore(rangeEnd, now),
+				);
+				const hoursUntilDue = rangeEnd
+					? differenceInHours(rangeEnd, now)
+					: null;
+				const isDueSoon = Boolean(
+					rangeEnd &&
+						!task.completed &&
+						!isOverdue &&
+						hoursUntilDue !== null &&
+						hoursUntilDue <= 24,
+				);
 								const statusMeta = statusDisplayMap[resolveTaskStatus(task)];
 
 								return (
@@ -248,32 +267,22 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 											</Stack>
 										}
 									>
-										<ListItemAvatar sx={{ minWidth: 42 }}>
-											<Avatar
-												sx={{
-													width: 32,
-													height: 32,
-													fontSize: "0.75rem",
-													bgcolor: task.completed
-														? "success.main"
-														: task.priority === "high"
-															? "error.main"
-															: task.priority === "medium"
-																? "warning.main"
-																: "info.main",
-													color: "#fff",
-													fontWeight: 700,
-												}}
-											>
-												{task.completed
-													? "✓"
-													: task.priority === "high"
-														? "高"
-														: task.priority === "medium"
-															? "中"
-															: "低"}
-											</Avatar>
-										</ListItemAvatar>
+                    <ListItemAvatar sx={{ minWidth: 42 }}>
+                      <Avatar
+                        sx={{
+                          width: 32,
+                          height: 32,
+                          fontSize: "0.75rem",
+                          bgcolor: task.completed
+                            ? "success.main"
+                            : priorityAvatarMeta[priority].bg,
+                          color: task.completed ? "#fff" : priorityAvatarMeta[priority].text,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {task.completed ? "✓" : priorityAvatarMeta[priority].label}
+                      </Avatar>
+                    </ListItemAvatar>
 										<ListItemText
 											disableTypography
 											sx={{ pr: 7 }}

@@ -2,7 +2,7 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { debugLog } from "../utils/logger";
 
-export type TodoPriority = "high" | "medium" | "low";
+export type TodoPriority = "high" | "medium" | "low" | "none";
 export type TodoStatus = "notStarted" | "inProgress" | "submitted" | "completed";
 export type TodoQuadrant =
 	| "urgentImportant"
@@ -16,6 +16,8 @@ export interface TodoTimeEntry {
 	durationMinutes: number;
 	comment?: string;
 }
+
+export const DEFAULT_CATEGORY = "👋 欢迎";
 
 export interface TodoTask {
 	id: string;
@@ -282,12 +284,13 @@ export const removeTagAtom = atom(null, (get, set, tag: string) => {
 });
 
 export const upsertCategoryAtom = atom(null, (get, set, category: string) => {
-	if (!category.trim()) return;
+	const normalized = category.trim();
+	if (!normalized || normalized === DEFAULT_CATEGORY) return;
 	const existing = get(categoriesAtom);
-	if (existing.includes(category)) {
+	if (existing.includes(normalized)) {
 		return;
 	}
-	set(categoriesAtom, [...existing, category]);
+	set(categoriesAtom, [...existing, normalized]);
 });
 
 export const removeCategoryAtom = atom(null, (get, set, category: string) => {

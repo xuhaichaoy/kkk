@@ -12,8 +12,8 @@ import {
 } from "@mui/material";
 import { format } from "date-fns";
 import React, { type ChangeEvent, type MouseEvent } from "react";
-import type { TodoTask } from "../../stores/todoStore";
-import { getTaskDueDate } from "../../utils/todoUtils";
+import type { TodoPriority, TodoTask } from "../../stores/todoStore";
+import { getTaskDateRange } from "../../utils/todoUtils";
 
 interface TodoListProps {
 	tasks: TodoTask[];
@@ -25,10 +25,18 @@ interface TodoListProps {
 	onLogTime: (task: TodoTask) => void;
 }
 
-const priorityColorMap: Record<string, string> = {
+const priorityColorMap: Record<TodoPriority, string> = {
 	high: "error",
 	medium: "warning",
 	low: "info",
+	none: "default",
+};
+
+const priorityLabelMap: Record<TodoPriority, string> = {
+	high: "高",
+	medium: "中",
+	low: "低",
+	none: "未设置",
 };
 
 const formatDate = (date?: string | Date | null) => {
@@ -36,6 +44,22 @@ const formatDate = (date?: string | Date | null) => {
 	const parsed = date instanceof Date ? date : new Date(date);
 	if (Number.isNaN(parsed.getTime())) return undefined;
 	return format(parsed, "MM-dd HH:mm");
+};
+
+const formatTaskSchedule = (task: TodoTask) => {
+	const range = getTaskDateRange(task);
+	if (!range) return undefined;
+	const sameDay = format(range.start, "yyyy-MM-dd") === format(range.end, "yyyy-MM-dd");
+	if (sameDay) {
+		const startTime = format(range.start, "HH:mm");
+		const endTime = format(range.end, "HH:mm");
+		const dayLabel = format(range.start, "MM-dd");
+		if (startTime === endTime) {
+			return startTime === "00:00" ? dayLabel : `${dayLabel} ${startTime}`;
+		}
+		return `${dayLabel} ${startTime} ~ ${endTime}`;
+	}
+	return `${format(range.start, "MM-dd")} ~ ${format(range.end, "MM-dd")}`;
 };
 
 const TodoList = ({
@@ -48,7 +72,8 @@ const TodoList = ({
 	onLogTime,
 }: TodoListProps) => {
 	const renderTask = (task: TodoTask) => {
-		const dueLabel = formatDate(getTaskDueDate(task));
+		const priority = task.priority ?? "none";
+		const scheduleLabel = formatTaskSchedule(task);
 		const reminderLabel = formatDate(task.reminder);
 		const isSelected = selectedId === task.id;
 		const totalMinutes = (task.timeEntries ?? []).reduce(
@@ -132,17 +157,11 @@ const TodoList = ({
 							>
 								{task.title}
 							</Typography>
-							<Chip
-								label={
-									task.priority === "high"
-										? "高"
-										: task.priority === "medium"
-											? "中"
-											: "低"
-								}
-								color={priorityColorMap[task.priority] as any}
-								size="small"
-							/>
+				<Chip
+					label={priorityLabelMap[priority]}
+					color={priorityColorMap[priority] as any}
+					size="small"
+				/>
 							{task.category && (
 								<Chip label={task.category} size="small" variant="outlined" />
 							)}
@@ -165,9 +184,9 @@ const TodoList = ({
 				flexWrap="wrap"
 				useFlexGap
 			>
-				{dueLabel && (
+				{scheduleLabel && (
 					<Chip
-						label={`截止 ${dueLabel}`}
+						label={scheduleLabel}
 						size="small"
 						variant="outlined"
 						color={task.completed ? "default" : "primary"}

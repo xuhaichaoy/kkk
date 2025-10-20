@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { Box, Card, CardContent, Grid, LinearProgress, Stack, Typography } from '@mui/material';
-import { differenceInCalendarWeeks, isBefore, isSameDay, isSameWeek, isToday } from 'date-fns';
+import { differenceInCalendarWeeks, addDays, isBefore, isSameDay, startOfDay, startOfWeek, endOfWeek } from 'date-fns';
 import { TodoTask } from '../../stores/todoStore';
-import { getTaskDueDate } from '../../utils/todoUtils';
+import { getTaskDateRange } from '../../utils/todoUtils';
 
 interface TodoStatsPanelProps {
   tasks: TodoTask[];
@@ -14,17 +14,27 @@ const TodoStatsPanel: React.FC<TodoStatsPanelProps> = ({ tasks }) => {
     const total = tasks.length;
     const completed = tasks.filter(task => task.completed).length;
     const active = tasks.filter(task => !task.completed).length;
+    const dayStart = startOfDay(now);
+    const dayEnd = addDays(dayStart, 1);
+    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+
     const today = tasks.filter(task => {
-      const due = getTaskDueDate(task);
-      return due ? isToday(due) : false;
+      const range = getTaskDateRange(task);
+      if (!range) return false;
+      return range.start < dayEnd && range.end >= dayStart;
     }).length;
+
     const thisWeek = tasks.filter(task => {
-      const due = getTaskDueDate(task);
-      return due ? isSameWeek(due, now) : false;
+      const range = getTaskDateRange(task);
+      if (!range) return false;
+      return range.start <= weekEnd && range.end >= weekStart;
     }).length;
+
     const overdue = tasks.filter(task => {
-      const due = getTaskDueDate(task);
-      return due ? !task.completed && isBefore(due, now) : false;
+      const range = getTaskDateRange(task);
+      if (!range) return false;
+      return !task.completed && isBefore(range.end, now);
     }).length;
 
     let longestStreak = 0;
@@ -54,13 +64,10 @@ const TodoStatsPanel: React.FC<TodoStatsPanelProps> = ({ tasks }) => {
     const completionRate = total === 0 ? 0 : Math.round((completed / total) * 100);
 
     const nextDue = tasks
-      .map(task => ({ task, due: getTaskDueDate(task) }))
-      .filter(item => item.due && !item.task.completed)
-      .filter((item): item is { task: TodoTask; due: Date } => {
-        if (!item.due) return false;
-        return !Number.isNaN(item.due.getTime());
-      })
-      .sort((a, b) => a.due.getTime() - b.due.getTime())[0] ?? null;
+      .map(task => ({ task, range: getTaskDateRange(task) }))
+      .filter(item => item.range && !item.task.completed)
+      .filter((item): item is { task: TodoTask; range: { start: Date; end: Date } } => Boolean(item.range))
+      .sort((a, b) => a.range.start.getTime() - b.range.start.getTime())[0] ?? null;
 
     return {
       total,
@@ -120,11 +127,14 @@ const TodoStatsPanel: React.FC<TodoStatsPanelProps> = ({ tasks }) => {
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {stats.nextDue
-                ? `${stats.nextDue.task.title}${
-                    stats.nextDue.due && !isSameDay(stats.nextDue.due, new Date())
-                      ? ` · ${stats.nextDue.due.toLocaleString()}`
-                      : ''
-                  }`
+                ? `${stats.nextDue.task.title}${(() => {
+                    const { range } = stats.nextDue;
+                    const sameDay = isSameDay(range.start, range.end);
+                    if (sameDay) {
+                      return ` · ${range.start.toLocaleString()}`;
+                    }
+                    return ` · ${range.start.toLocaleDateString()} ~ ${range.end.toLocaleDateString()}`;
+                  })()}`
                 : '暂无即将到来的任务'}
             </Typography>
           </CardContent>
