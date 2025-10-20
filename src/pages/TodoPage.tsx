@@ -39,6 +39,8 @@ import {
 	getFilteredTodos,
 	generateWeeklyReport,
 	generateWeeklyReflection,
+	getCurrentWeekRange,
+	type DateRange,
 	getTodayTodos,
 	getWeekTodos,
 } from "../utils/todoUtils";
@@ -80,6 +82,12 @@ const TodoPage: FC = () => {
 	const [formOpen, setFormOpen] = useState(false);
 	const [reportOpen, setReportOpen] = useState(false);
 	const [summaryOpen, setSummaryOpen] = useState(false);
+	const [reportRange, setReportRange] = useState<DateRange>(() =>
+		getCurrentWeekRange(),
+	);
+	const [summaryRange, setSummaryRange] = useState<DateRange>(() =>
+		getCurrentWeekRange(),
+	);
 	const [editingTask, setEditingTask] = useState<TodoTask | null>(null);
 	const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 	const [timeLogOpen, setTimeLogOpen] = useState(false);
@@ -147,12 +155,18 @@ const TodoPage: FC = () => {
 	}, [timeLogTaskId, todos]);
 
 	const weeklyReport = useMemo(
-		() => generateWeeklyReport(todos),
-		[todos],
+		() =>
+			generateWeeklyReport(todos, {
+				range: reportRange,
+			}),
+		[todos, reportRange],
 	);
 	const weeklyReflectionSummary = useMemo(
-		() => generateWeeklyReflection(todos),
-		[todos],
+		() =>
+			generateWeeklyReflection(todos, {
+				range: summaryRange,
+			}),
+		[todos, summaryRange],
 	);
 
 	const hasCompletedTodos = useMemo(
@@ -261,7 +275,32 @@ const TodoPage: FC = () => {
 		}
 	}, []);
 
+	const handleReportRangeChange = useCallback((range: DateRange) => {
+		setReportRange((previous) => {
+			if (
+				previous.start.getTime() === range.start.getTime() &&
+				previous.end.getTime() === range.end.getTime()
+			) {
+				return previous;
+			}
+			return range;
+		});
+	}, []);
+
+	const handleSummaryRangeChange = useCallback((range: DateRange) => {
+		setSummaryRange((previous) => {
+			if (
+				previous.start.getTime() === range.start.getTime() &&
+				previous.end.getTime() === range.end.getTime()
+			) {
+				return previous;
+			}
+			return range;
+		});
+	}, []);
+
 	const handleOpenWeeklyReport = useCallback(() => {
+		setReportRange(getCurrentWeekRange());
 		setReportOpen(true);
 	}, []);
 
@@ -270,6 +309,7 @@ const TodoPage: FC = () => {
 	}, []);
 
 	const handleOpenWeeklySummary = useCallback(() => {
+		setSummaryRange(getCurrentWeekRange());
 		setSummaryOpen(true);
 	}, []);
 
@@ -450,6 +490,8 @@ const TodoPage: FC = () => {
 					editable
 					title="周报工作汇总"
 					description="以下内容根据最近任务动态自动生成，可在复制前自行调整。"
+					range={reportRange}
+					onRangeChange={handleReportRangeChange}
 				/>
 				<TodoWeeklyReportDialog
 					open={summaryOpen}
@@ -458,6 +500,8 @@ const TodoPage: FC = () => {
 					editable
 					title="本周反思总结"
 					description="根据任务的「反思」字段自动生成，可在此补充或修改后再复制。"
+					range={summaryRange}
+					onRangeChange={handleSummaryRangeChange}
 				/>
 				<TodoTimeLogDialog
 					open={timeLogOpen}

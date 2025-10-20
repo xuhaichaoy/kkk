@@ -1,6 +1,7 @@
 import {
 	addDays,
 	addWeeks,
+	endOfDay,
 	endOfWeek,
 	format,
 	isBefore,
@@ -276,6 +277,23 @@ export const statusDisplayMap: Record<
 	completed: { label: "已完成", color: "success" },
 };
 
+export type DateRange = { start: Date; end: Date };
+
+const normalizeRange = (range: DateRange): DateRange => {
+	const start = startOfDay(range.start);
+	const end = endOfDay(range.end);
+	if (start.getTime() <= end.getTime()) {
+		return { start, end };
+	}
+	return { start: end, end: start };
+};
+
+export const getCurrentWeekRange = (referenceDate = new Date()): DateRange =>
+	normalizeRange({
+		start: startOfWeek(referenceDate, { weekStartsOn: 1 }),
+		end: endOfWeek(referenceDate, { weekStartsOn: 1 }),
+	});
+
 const priorityLabel: Record<TodoPriority, string> = {
 	high: "高",
 	medium: "中",
@@ -315,24 +333,40 @@ const formatDate = (value?: string | Date | null) => {
 			return `- ${parts.join(" ｜ ")}`;
 		});
 
+type WeeklyReportOptions =
+	| Date
+	| {
+			referenceDate?: Date;
+			range?: DateRange;
+	  };
+
 export const generateWeeklyReport = (
 	todos: TodoTask[],
-	referenceDate = new Date(),
+	options?: WeeklyReportOptions,
 ) => {
-	const now = referenceDate;
-	const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });
-	const currentWeekEnd = endOfWeek(now, { weekStartsOn: 1 });
-	const effectiveWeekEnd =
-		now.getTime() < currentWeekEnd.getTime() ? now : currentWeekEnd;
-	const nextWeekStart = addWeeks(currentWeekStart, 1);
+	const normalizedOptions =
+		options instanceof Date ? { referenceDate: options } : options ?? {};
+	const now = normalizedOptions.referenceDate ?? new Date();
+	const resolvedRange = normalizedOptions.range
+		? normalizeRange(normalizedOptions.range)
+		: getCurrentWeekRange(now);
+	const rangeStart = resolvedRange.start;
+	const rangeEnd = resolvedRange.end;
+	const effectiveRangeEnd = normalizedOptions.range
+		? rangeEnd
+		: now.getTime() < rangeEnd.getTime()
+			? now
+			: rangeEnd;
+	const baseWeekStart = startOfWeek(rangeStart, { weekStartsOn: 1 });
+	const nextWeekStart = addWeeks(baseWeekStart, 1);
 	const nextWeekEnd = endOfWeek(nextWeekStart, { weekStartsOn: 1 });
 
 	const totalCount = todos.length;
 	const completedCount = todos.filter((task) => task.completed).length;
 	const createdThisWeek = todos.filter((task) =>
 		isWithinInterval(new Date(task.createdAt), {
-			start: currentWeekStart,
-			end: effectiveWeekEnd,
+			start: rangeStart,
+			end: effectiveRangeEnd,
 		}),
 	);
 
@@ -341,8 +375,8 @@ export const generateWeeklyReport = (
 			task.completed &&
 			task.completedAt &&
 			isWithinInterval(new Date(task.completedAt), {
-				start: currentWeekStart,
-				end: effectiveWeekEnd,
+				start: rangeStart,
+				end: effectiveRangeEnd,
 			}),
 	);
 
@@ -375,8 +409,8 @@ export const generateWeeklyReport = (
 	const lines: string[] = [];
 	lines.push("【本周概览】");
 	lines.push(
-		`- 时间范围：${format(currentWeekStart, "MM月dd日")} - ${format(
-			currentWeekEnd,
+		`- 时间范围：${format(rangeStart, "MM月dd日")} - ${format(
+			rangeEnd,
 			"MM月dd日",
 		)}`,
 	);
@@ -413,11 +447,11 @@ export const generateWeeklyReport = (
 			const range = getTaskDateRange(task);
 			const dateLabel = range
 				? (() => {
-					const sameDay = format(range.start, "yyyy-MM-dd") === format(range.end, "yyyy-MM-dd");
-					return sameDay
-						? format(range.end, "MM月dd日")
-						: `${format(range.start, "MM月dd日")} - ${format(range.end, "MM月dd日")}`;
-				})()
+						const sameDay = format(range.start, "yyyy-MM-dd") === format(range.end, "yyyy-MM-dd");
+						return sameDay
+							? format(range.end, "MM月dd日")
+							: `${format(range.start, "MM月dd日")} - ${format(range.end, "MM月dd日")}`;
+					})()
 				: "";
 			lines.push(
 				`- [${priorityLabel[task.priority]}] ${task.title}${
@@ -433,11 +467,11 @@ export const generateWeeklyReport = (
 			const range = getTaskDateRange(task);
 			const dateLabel = range
 				? (() => {
-					const sameDay = format(range.start, "yyyy-MM-dd") === format(range.end, "yyyy-MM-dd");
-					return sameDay
-						? format(range.end, "MM月dd日")
-						: `${format(range.start, "MM月dd日")} - ${format(range.end, "MM月dd日")}`;
-				})()
+						const sameDay = format(range.start, "yyyy-MM-dd") === format(range.end, "yyyy-MM-dd");
+						return sameDay
+							? format(range.end, "MM月dd日")
+							: `${format(range.start, "MM月dd日")} - ${format(range.end, "MM月dd日")}`;
+					})()
 				: "";
 			lines.push(
 				`- [${priorityLabel[task.priority]}] ${task.title}${
@@ -450,21 +484,33 @@ export const generateWeeklyReport = (
 	return lines.join("\n");
 };
 
+type WeeklyReflectionOptions =
+	| Date
+	| {
+			referenceDate?: Date;
+			range?: DateRange;
+	  };
+
 export const generateWeeklyReflection = (
 	todos: TodoTask[],
-	referenceDate = new Date(),
+	options?: WeeklyReflectionOptions,
 ) => {
-	const now = referenceDate;
-	const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });
-	const currentWeekEnd = endOfWeek(now, { weekStartsOn: 1 });
+	const normalizedOptions =
+		options instanceof Date ? { referenceDate: options } : options ?? {};
+	const now = normalizedOptions.referenceDate ?? new Date();
+	const resolvedRange = normalizedOptions.range
+		? normalizeRange(normalizedOptions.range)
+		: getCurrentWeekRange(now);
+	const rangeStart = resolvedRange.start;
+	const rangeEnd = resolvedRange.end;
 
 	const isInReflectionWindow = (value?: string) => {
 		if (!value) return false;
 		const date = new Date(value);
 		if (Number.isNaN(date.getTime())) return false;
 		return isWithinInterval(date, {
-			start: currentWeekStart,
-			end: currentWeekEnd,
+			start: rangeStart,
+			end: rangeEnd,
 		});
 	};
 
@@ -494,8 +540,8 @@ export const generateWeeklyReflection = (
 			task.completed &&
 			task.completedAt &&
 			isWithinInterval(new Date(task.completedAt), {
-				start: currentWeekStart,
-				end: currentWeekEnd,
+				start: rangeStart,
+				end: rangeEnd,
 			}),
 	);
 
@@ -506,8 +552,8 @@ export const generateWeeklyReflection = (
 	const lines: string[] = [];
 	lines.push("【本周反思总结】");
 	lines.push(
-		`- 时间范围：${format(currentWeekStart, "MM月dd日")} - ${format(
-			currentWeekEnd,
+		`- 时间范围：${format(rangeStart, "MM月dd日")} - ${format(
+			rangeEnd,
 			"MM月dd日",
 		)}`,
 	);
@@ -519,15 +565,10 @@ export const generateWeeklyReflection = (
 			const updatedAt = completedAt ? "" : formatDateTime(task.updatedAt);
 			const labelParts = [
 				`[${priorityLabel[task.priority]}] ${task.title}`,
-			];
-			if (task.category) {
-				labelParts.push(`分类：${task.category}`);
-			}
-			if (completedAt) {
-				labelParts.push(`完成：${completedAt}`);
-			} else if (updatedAt) {
-				labelParts.push(`更新：${updatedAt}`);
-			}
+				task.category ? `分类：${task.category}` : "",
+				completedAt ? `完成：${completedAt}` : "",
+				!completedAt && updatedAt ? `更新：${updatedAt}` : "",
+			].filter(Boolean);
 			lines.push(`- ${labelParts.join(" ｜ ")}`);
 			lines.push(`  反思：${task.reflection?.trim() ?? ""}`);
 		});
