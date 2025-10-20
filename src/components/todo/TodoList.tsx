@@ -1,4 +1,7 @@
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
+import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditIcon from "@mui/icons-material/Edit";
 import {
@@ -81,6 +84,10 @@ const TodoList = ({
 			0,
 		);
 
+		const tags = task.tags ?? [];
+		const visibleTags = tags.slice(0, 3);
+		const extraTagCount = Math.max(tags.length - 3, 0);
+
 		const handleEditClick = (event: MouseEvent<HTMLButtonElement>) => {
 			event.stopPropagation();
 			onEdit(task);
@@ -100,46 +107,62 @@ const TodoList = ({
 			<Box
 				key={task.id}
 				sx={{
-					px: { xs: 1.8, sm: 2.4 },
-					py: { xs: 1.4, sm: 1.6 },
-					borderRadius: 2.5,
+					// px: { xs: 1.8, sm: 2.4 },
+					py: { xs: 0.8, sm: 0.9 },
+					borderRadius: 1,
 					border: "1px solid",
 					borderColor: isSelected ? "primary.light" : "divider",
 					backgroundColor: isSelected
 						? "primary.main" + "12"
 						: task.completed
-							? "success.main" + "08"
+							? "action.disabledBackground"
 							: "background.paper",
-					transition: "all 0.2s ease",
+					transition: "all 0.18s ease",
 					cursor: onSelect ? "pointer" : "default",
-					boxShadow: isSelected
-						? "0 12px 28px -20px rgba(56,99,206,0.6)"
-						: "none",
+					boxShadow: isSelected ? "0 6px 20px -18px rgba(56,99,206,0.65)" : "none",
+					position: "relative",
 					"&:hover": {
 						borderColor: "primary.main",
 						backgroundColor: isSelected
 							? "primary.main" + "18"
 							: task.completed
-								? "success.main" + "12"
+								? "action.disabledBackground"
 								: "action.hover",
 					},
 				}}
 				onClick={() => onSelect?.(task)}
 			>
+				{/* 左侧优先级色条 */}
+				<Box
+					sx={{
+						position: "absolute",
+						left: 0,
+						top: 0,
+						bottom: 0,
+						width: 3,
+						borderTopLeftRadius: 4,
+						borderBottomLeftRadius: 4,
+						bgcolor:
+							priority === "none"
+								? "divider"
+								: (priorityColorMap[priority] as any) + ".main",
+					}}
+				/>
 				<Stack
 					direction="row"
-					spacing={2}
+					spacing={1.25}
 					alignItems="flex-start"
 					sx={{ width: "100%" }}
 				>
-					<Checkbox
-						checked={task.completed}
-						onChange={handleToggle}
-						onClick={(event) => event.stopPropagation()}
-						size="small"
-					/>
+						<Checkbox
+							checked={task.completed}
+							onChange={handleToggle}
+							onClick={(event) => event.stopPropagation()}
+							size="small"
+							color={task.completed ? "default" : "primary"}
+						/>
 
-					<Stack spacing={0.75} flex={1} minWidth={0} sx={{ py: 0.25 }}>
+						<Stack spacing={0.5} flex={1} minWidth={0} sx={{ py: 0.1 }}>
 						<Stack
 							direction={{ xs: "column", sm: "row" }}
 							spacing={1}
@@ -147,121 +170,165 @@ const TodoList = ({
 							flexWrap="wrap"
 							useFlexGap
 						>
-							<Typography
+						<Typography
 								variant="subtitle1"
 								sx={{
 									fontWeight: 600,
-									textDecoration: task.completed ? "line-through" : "none",
-									wordBreak: "break-word",
+								textDecoration: task.completed ? "line-through" : "none",
+								color: task.completed ? "text.disabled" : "text.primary",
+								wordBreak: "break-word",
+								fontSize: { xs: "0.9rem", sm: "0.95rem" },
 								}}
 							>
 								{task.title}
 							</Typography>
-				<Chip
-					label={priorityLabelMap[priority]}
-					color={priorityColorMap[priority] as any}
-					size="small"
-				/>
-							{task.category && (
-								<Chip label={task.category} size="small" variant="outlined" />
+						{task.category && (
+							<Chip
+								label={task.category}
+								size="small"
+								sx={{
+									borderColor: "divider",
+									backgroundColor: "transparent",
+								}}
+							/>
+						)}
+						</Stack>
+
+						<Stack
+							direction="row"
+							spacing={0.75}
+							alignItems="center"
+							flexWrap="wrap"
+							useFlexGap
+						>
+							{scheduleLabel && (
+								<Chip
+									icon={<CalendarMonthIcon sx={{ fontSize: 16 }} />}
+									label={scheduleLabel}
+									size="small"
+									variant="outlined"
+									color={task.completed ? "default" : "default"}
+									sx={{ px: 0.25, "& .MuiChip-icon": { mr: 0.2, fontSize: 16 } }}
+								/>
+							)}
+							{reminderLabel && (
+								<Chip
+									icon={<NotificationsNoneIcon sx={{ fontSize: 14 }} />}
+									label={`提醒 ${reminderLabel}`}
+									size="small"
+									variant="outlined"
+								/>
+							)}
+							{totalMinutes > 0 && (
+								<Chip
+									icon={<HourglassBottomIcon sx={{ fontSize: 14 }} />}
+									label={`累计 ${Math.round((totalMinutes / 60) * 10) / 10} 小时`}
+									size="small"
+									color={task.completed ? "default" : "secondary"}
+								/>
+							)}
+							{visibleTags.map((tag) => (
+								<Chip
+									key={tag}
+									label={tag}
+									size="small"
+									variant="outlined"
+									color="default"
+								/>
+							))}
+							{extraTagCount > 0 && (
+								<Chip label={`+${extraTagCount}`} size="small" variant="outlined" color="default" />
 							)}
 						</Stack>
 
-			{task.description && (
-				<Typography
-					variant="body2"
-					color="text.secondary"
-					sx={{ wordBreak: "break-word" }}
-				>
-					{task.description}
-				</Typography>
-			)}
+						{false && task.notes && (
+							<Box
+								sx={{
+									mt: 0.25,
+									px: 0.75,
+									py: 0.5,
+									borderRadius: 1,
+									backgroundColor: task.completed ? "primary.main" + "06" : "primary.main" + "0A",
+									border: "1px solid",
+									borderColor: "primary.main" + "24",
+								}}
+							>
+								<Typography
+									variant="caption"
+									color="text.secondary"
+									sx={{
+										opacity: 0.9,
+										wordBreak: "break-word",
+										display: "-webkit-box",
+										WebkitLineClamp: 2,
+										WebkitBoxOrient: "vertical",
+										overflow: "hidden",
+									}}
+								>
+									{task.notes}
+								</Typography>
+							</Box>
+						)}
+						{false && task.reflection && (
+							<Box
+								sx={{
+									mt: 0.25,
+									px: 0.75,
+									py: 0.5,
+									borderRadius: 1,
+									backgroundColor: task.completed ? "primary.main" + "06" : "primary.main" + "0A",
+									border: "1px solid",
+									borderColor: "primary.main" + "24",
+								}}
+							>
+								<Typography
+									variant="caption"
+									color="text.secondary"
+									sx={{
+										opacity: 0.9,
+										wordBreak: "break-word",
+										display: "-webkit-box",
+										WebkitLineClamp: 2,
+										WebkitBoxOrient: "vertical",
+										overflow: "hidden",
+									}}
+								>
+									{task.reflection}
+								</Typography>
+							</Box>
+						)}
+					</Stack>
 
-			<Stack
-				direction="row"
-				spacing={1}
-				alignItems="center"
-				flexWrap="wrap"
-				useFlexGap
-			>
-				{scheduleLabel && (
-					<Chip
-						label={scheduleLabel}
-						size="small"
-						variant="outlined"
-						color={task.completed ? "default" : "primary"}
-					/>
-				)}
-				{reminderLabel && (
-					<Chip
-						label={`提醒 ${reminderLabel}`}
-						size="small"
-						variant="outlined"
-					/>
-				)}
-				{totalMinutes > 0 && (
-					<Chip
-						label={`累计 ${Math.round((totalMinutes / 60) * 10) / 10} 小时`}
-						size="small"
-						color="secondary"
-						variant="outlined"
-					/>
-				)}
-				{task.tags.map((tag) => (
-					<Chip key={tag} label={tag} size="small" variant="outlined" />
-				))}
-			</Stack>
-
-			{task.notes && (
-				<Typography
-					variant="caption"
-					color="text.secondary"
-					sx={{ opacity: 0.8, wordBreak: "break-word" }}
-				>
-					{task.notes}
-				</Typography>
-			)}
-			{task.reflection && (
-				<Typography
-					variant="caption"
-					color="text.secondary"
-					sx={{ opacity: 0.8, wordBreak: "break-word" }}
-				>
-					{task.reflection}
-				</Typography>
-			)}
-		</Stack>
-
-		<Stack direction="row" spacing={1} alignItems="center">
-			<Tooltip title="登记用时" arrow>
-				<IconButton
-					onClick={(event) => {
-						event.stopPropagation();
-						onLogTime(task);
-					}}
-					size="small"
-				>
-					<AccessTimeIcon fontSize="small" />
-				</IconButton>
-			</Tooltip>
-			<Tooltip title="编辑" arrow>
-				<IconButton onClick={handleEditClick} size="small">
-					<EditIcon fontSize="small" />
-				</IconButton>
-			</Tooltip>
-			<Tooltip title="删除" arrow>
-				<IconButton
-					onClick={handleDeleteClick}
-					size="small"
-					color="error"
-				>
-					<DeleteOutlineIcon fontSize="small" />
-				</IconButton>
-			</Tooltip>
-		</Stack>
-	</Stack>
-	</Box>
-	);
+					<Stack direction="row" spacing={1} alignItems="center" sx={{ opacity: 0.75, transition: "opacity .15s", "&:hover": { opacity: 1 } }}>
+						<Tooltip title="登记用时" arrow>
+							<IconButton
+								onClick={(event) => {
+									event.stopPropagation();
+									onLogTime(task);
+								}}
+								size="small"
+							>
+								<AccessTimeIcon fontSize="small" />
+							</IconButton>
+						</Tooltip>
+						<Tooltip title="编辑" arrow>
+							<IconButton onClick={handleEditClick} size="small">
+								<EditIcon fontSize="small" />
+							</IconButton>
+						</Tooltip>
+						<Tooltip title="删除" arrow>
+							<IconButton
+								onClick={handleDeleteClick}
+								size="small"
+								color="error"
+							>
+								<DeleteOutlineIcon fontSize="small" />
+							</IconButton>
+						</Tooltip>
+					</Stack>
+				</Stack>
+			</Box>
+		);
 	};
 
 	return (
