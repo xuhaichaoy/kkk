@@ -42,6 +42,7 @@ const TodoKanbanBoard: FC<TodoKanbanBoardProps> = ({
 	tasks,
 	onStatusChange,
 	onEditTask,
+	onLogTime,
 }) => {
 	const theme = useTheme();
 	const [collapsedColumns, setCollapsedColumns] = useState<Set<TodoStatus>>(
@@ -223,12 +224,25 @@ const renderTaskCard = (task: TodoTask, index: number) => {
 									</Typography>
 								)}
 								</Stack>
-								<AccessTimeIcon
-									sx={{
-										fontSize: 16,
-										color: "text.disabled",
+								<IconButton
+									size="small"
+									onClick={(event) => {
+										event.stopPropagation();
+										onLogTime?.(task);
 									}}
-								/>
+									sx={{
+										width: 26,
+										height: 26,
+										color: "text.disabled",
+										"&:hover": {
+											color: "primary.main",
+											backgroundColor: "transparent",
+										},
+									}}
+									aria-label="登记用时"
+								>
+									<AccessTimeIcon sx={{ fontSize: 16 }} />
+								</IconButton>
 							</Stack>
 						</Stack>
 					</Box>

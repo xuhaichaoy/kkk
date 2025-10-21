@@ -199,6 +199,7 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 								tasks={filteredTasks}
 								onStatusChange={onStatusChange}
 								onEditTask={onEditTask}
+								onLogTime={onLogTime}
 							/>
 						</Box>
 					)}

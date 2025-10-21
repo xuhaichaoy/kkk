@@ -72,9 +72,6 @@ const TaskQuickForm: React.FC<TaskQuickFormProps> = ({
 	return (
 		<Stack spacing={2}>
 			<Stack spacing={1.5}>
-				<Typography variant="subtitle1" fontWeight={600}>
-					任务设置
-				</Typography>
 				<ToggleButtonGroup
 					color="primary"
 					size="small"
