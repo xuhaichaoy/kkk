@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -26,10 +26,33 @@ import {
   Paper,
   TextField,
   FormControlLabel,
-  Checkbox
+  Checkbox,
+  FormHelperText,
+  ListItemText,
+  ToggleButtonGroup,
+  ToggleButton,
+  IconButton,
+  FormGroup
 } from '@mui/material';
+import type { SelectChangeEvent } from '@mui/material/Select';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { SheetData, compareSheets, ComparisonResult, formatCellValue, ComparisonMergeSheetOptions, getHeaderRow } from '../../utils/excelUtils';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import {
+  SheetData,
+  compareSheets,
+  ComparisonResult,
+  formatCellValue,
+  ComparisonMergeSheetOptions,
+  getHeaderRow,
+  ComparisonOptions,
+  ColumnMapping,
+  ResolvedColumnMapping,
+  createComparisonMergeSheet,
+  exportToExcel,
+  exportToCSV,
+  ExportOptions
+} from '../../utils/excelUtils';
 
 export interface CreateMergedSheetPayload {
   firstSheetIndex: number;
@@ -63,6 +86,65 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
   const [includeUniqueFromSecond, setIncludeUniqueFromSecond] = useState<boolean>(true);
   const [includeModifiedRows, setIncludeModifiedRows] = useState<boolean>(true);
   const [highlightChanges, setHighlightChanges] = useState<boolean>(true);
+  const [alignmentMode, setAlignmentMode] = useState<'auto' | 'manual'>('auto');
+  const [manualMappings, setManualMappings] = useState<ColumnMapping[]>([]);
+  const [selectedKeyColumns, setSelectedKeyColumns] = useState<string[]>([]);
+  const [visibleDiffTypes, setVisibleDiffTypes] = useState({
+    uniqueToFirst: true,
+    uniqueToSecond: true,
+    modified: true
+  });
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+
+  const currentFirstSheet = sheets[firstSheetIndex] ?? null;
+  const currentSecondSheet = sheets[secondSheetIndex] ?? null;
+
+  const originalFirstHeaders = useMemo(
+    () => (currentFirstSheet ? getHeaderRow(currentFirstSheet) : []),
+    [currentFirstSheet]
+  );
+  const originalSecondHeaders = useMemo(
+    () => (currentSecondSheet ? getHeaderRow(currentSecondSheet) : []),
+    [currentSecondSheet]
+  );
+  const firstHeadersLength = originalFirstHeaders.length;
+  const secondHeadersLength = originalSecondHeaders.length;
+
+  const resolvedMappings: ResolvedColumnMapping[] = useMemo(
+    () => comparisonResult?.metadata.manualColumnMappings ?? [],
+    [comparisonResult]
+  );
+
+  const displayFirstHeaders = useMemo(() => {
+    if (!resolvedMappings.length) {
+      return originalFirstHeaders.map((header, index) => header ?? `列${index + 1}`);
+    }
+    const lookup = new Map<number, string>();
+    resolvedMappings.forEach(mapping => {
+      lookup.set(mapping.firstColumnIndex, mapping.label);
+    });
+    return originalFirstHeaders.map((header, index) => lookup.get(index) ?? (header ?? `列${index + 1}`));
+  }, [originalFirstHeaders, resolvedMappings]);
+
+  const displaySecondHeaders = useMemo(() => {
+    if (!resolvedMappings.length) {
+      return originalSecondHeaders.map((header, index) => header ?? `列${index + 1}`);
+    }
+    const lookup = new Map<number, string>();
+    resolvedMappings.forEach(mapping => {
+      lookup.set(mapping.secondColumnIndex, mapping.label);
+    });
+    return originalSecondHeaders.map((header, index) => lookup.get(index) ?? (header ?? `列${index + 1}`));
+  }, [originalSecondHeaders, resolvedMappings]);
+
+  const availableKeyColumns = useMemo(
+    () => comparisonResult?.headerDifferences.commonColumns ?? [],
+    [comparisonResult]
+  );
+
+  const mergeOptionsSelected = includeUniqueFromFirst || includeUniqueFromSecond || includeModifiedRows;
+  const canCompare = sheets.length >= 2 && firstSheetIndex !== secondSheetIndex;
 
   // 执行对比
   const performComparison = useCallback(() => {
@@ -79,9 +161,46 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
       return;
     }
 
-    const result = compareSheets(firstSheet, secondSheet, firstSheetIndex, secondSheetIndex, editedRows);
+    const sanitizedMappings: ColumnMapping[] = manualMappings
+      .filter(mapping =>
+        typeof mapping.firstColumnIndex === 'number' &&
+        typeof mapping.secondColumnIndex === 'number' &&
+        Number.isFinite(mapping.firstColumnIndex) &&
+        Number.isFinite(mapping.secondColumnIndex)
+      )
+      .map(mapping => ({
+        firstColumnIndex: Math.max(0, Math.trunc(mapping.firstColumnIndex)),
+        secondColumnIndex: Math.max(0, Math.trunc(mapping.secondColumnIndex)),
+        label: mapping.label
+      }));
+
+    const uniqueKeyColumns = Array.from(new Set(selectedKeyColumns.filter(Boolean)));
+
+    const comparisonOptions: ComparisonOptions = {
+      alignmentMode,
+      manualColumnMappings: alignmentMode === 'manual' ? sanitizedMappings : [],
+      keyColumns: uniqueKeyColumns
+    };
+
+    const result = compareSheets(
+      firstSheet,
+      secondSheet,
+      firstSheetIndex,
+      secondSheetIndex,
+      editedRows,
+      comparisonOptions
+    );
     setComparisonResult(result);
-  }, [firstSheetIndex, secondSheetIndex, sheets, editedRows]);
+    setExportError('');
+  }, [
+    firstSheetIndex,
+    secondSheetIndex,
+    sheets,
+    editedRows,
+    manualMappings,
+    alignmentMode,
+    selectedKeyColumns
+  ]);
 
   // 当选择改变时重新对比
   useEffect(() => {
@@ -89,6 +208,10 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
       performComparison();
     }
   }, [firstSheetIndex, secondSheetIndex, open, performComparison]);
+
+  useEffect(() => {
+    setManualMappings([]);
+  }, [firstSheetIndex, secondSheetIndex]);
 
   useEffect(() => {
     if (!open) {
@@ -103,6 +226,16 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
     setIncludeUniqueFromSecond(true);
     setIncludeModifiedRows(true);
     setHighlightChanges(true);
+    setAlignmentMode('auto');
+    setManualMappings([]);
+    setSelectedKeyColumns([]);
+    setVisibleDiffTypes({
+      uniqueToFirst: true,
+      uniqueToSecond: true,
+      modified: true
+    });
+    setExportError('');
+    setExporting(false);
   }, [open, sheets, firstSheetIndex, secondSheetIndex]);
 
   // 关闭对话框时重置状态
@@ -117,10 +250,19 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
     setIncludeUniqueFromSecond(true);
     setIncludeModifiedRows(true);
     setHighlightChanges(true);
+    setAlignmentMode('auto');
+    setManualMappings([]);
+    setSelectedKeyColumns([]);
+    setVisibleDiffTypes({
+      uniqueToFirst: true,
+      uniqueToSecond: true,
+      modified: true
+    });
+    setExportError('');
+    setExporting(false);
     onClose();
   }, [onClose]);
 
-  const mergeOptionsSelected = includeUniqueFromFirst || includeUniqueFromSecond || includeModifiedRows;
 
   const handleMergeSheetNameChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
@@ -157,6 +299,102 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
     setHighlightChanges(event.target.checked);
   }, []);
 
+  const handleAlignmentModeChange = useCallback(
+    (_event: React.MouseEvent<HTMLElement>, value: 'auto' | 'manual' | null) => {
+      if (!value) {
+        return;
+      }
+      setAlignmentMode(value);
+      if (value === 'auto') {
+        setManualMappings([]);
+      }
+    },
+    []
+  );
+
+  const handleAddManualMapping = useCallback(() => {
+    if (firstHeadersLength === 0 || secondHeadersLength === 0) {
+      return;
+    }
+    setManualMappings(prev => {
+      const nextFirstRaw = Math.min(prev.length, firstHeadersLength - 1);
+      const nextSecondRaw = Math.min(prev.length, secondHeadersLength - 1);
+      const nextFirst = Number.isFinite(nextFirstRaw) && nextFirstRaw >= 0 ? nextFirstRaw : 0;
+      const nextSecond = Number.isFinite(nextSecondRaw) && nextSecondRaw >= 0 ? nextSecondRaw : 0;
+      return [
+        ...prev,
+        {
+          firstColumnIndex: nextFirst,
+          secondColumnIndex: nextSecond,
+          label: ''
+        }
+      ];
+    });
+  }, [firstHeadersLength, secondHeadersLength]);
+
+  const handleManualMappingIndexChange = useCallback(
+    (mappingIndex: number, field: 'firstColumnIndex' | 'secondColumnIndex', value: string | number) => {
+      const parsed = typeof value === 'number' ? value : Number(value);
+      if (!Number.isFinite(parsed)) {
+        return;
+      }
+      const maxIndex = field === 'firstColumnIndex' ? firstHeadersLength - 1 : secondHeadersLength - 1;
+      const clamped = Math.min(Math.max(parsed, 0), Math.max(maxIndex, 0));
+      setManualMappings(prev =>
+        prev.map((mapping, index) =>
+          index === mappingIndex ? { ...mapping, [field]: clamped } : mapping
+        )
+      );
+    },
+    [firstHeadersLength, secondHeadersLength]
+  );
+
+  const handleManualMappingLabelChange = useCallback((mappingIndex: number, value: string) => {
+    setManualMappings(prev =>
+      prev.map((mapping, index) =>
+        index === mappingIndex ? { ...mapping, label: value } : mapping
+      )
+    );
+  }, []);
+
+  const handleRemoveManualMapping = useCallback((mappingIndex: number) => {
+    setManualMappings(prev => prev.filter((_, index) => index !== mappingIndex));
+  }, []);
+
+  const handleKeyColumnsChange = useCallback(
+    (event: SelectChangeEvent<typeof selectedKeyColumns>) => {
+      const value = event.target.value;
+      setSelectedKeyColumns(typeof value === 'string' ? value.split(',').filter(Boolean) : value);
+    },
+    []
+  );
+
+  const handleToggleDiffVisibility = useCallback((field: 'uniqueToFirst' | 'uniqueToSecond' | 'modified') => {
+    setVisibleDiffTypes(prev => {
+      const next = { ...prev, [field]: !prev[field] };
+      if (!next.uniqueToFirst && !next.uniqueToSecond && !next.modified) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  const handleShowOnlyModified = useCallback(() => {
+    setVisibleDiffTypes({
+      uniqueToFirst: false,
+      uniqueToSecond: false,
+      modified: true
+    });
+  }, []);
+
+  const handleShowAllDiffs = useCallback(() => {
+    setVisibleDiffTypes({
+      uniqueToFirst: true,
+      uniqueToSecond: true,
+      modified: true
+    });
+  }, []);
+
   const handleCreateMergedSheet = useCallback(() => {
     if (!comparisonResult || !onCreateMergedSheet) {
       return;
@@ -185,11 +423,98 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
     });
   }, [comparisonResult, onCreateMergedSheet, mergeSheetName, mergeOptionsSelected, firstSheetIndex, secondSheetIndex, includeUniqueFromFirst, includeUniqueFromSecond, includeModifiedRows, highlightChanges]);
 
-  const canCompare = sheets.length >= 2 && firstSheetIndex !== secondSheetIndex;
-  const firstHeaderSheet = sheets[firstSheetIndex];
-  const secondHeaderSheet = sheets[secondSheetIndex];
-  const firstHeaders = firstHeaderSheet ? getHeaderRow(firstHeaderSheet) : [];
-  const secondHeaders = secondHeaderSheet ? getHeaderRow(secondHeaderSheet) : [];
+  const handleExportComparisonExcel = useCallback(async () => {
+    if (!comparisonResult || !currentFirstSheet || !currentSecondSheet || !mergeOptionsSelected) {
+      return;
+    }
+    const trimmedName = mergeSheetName.trim();
+    const sheetName = trimmedName || `${currentFirstSheet.name}_${currentSecondSheet.name}_差异报告`;
+
+    try {
+      setExporting(true);
+      const sheetData = createComparisonMergeSheet(currentFirstSheet, currentSecondSheet, comparisonResult, {
+        sheetName,
+        includeUniqueFromFirst,
+        includeUniqueFromSecond,
+        includeModifiedRows,
+        highlightChanges,
+        firstSourceLabel: currentFirstSheet.name,
+        secondSourceLabel: currentSecondSheet.name
+      });
+      const exportOptions: ExportOptions = {
+        fileName: sheetName,
+        separateFiles: false,
+        preserveFormulas: false
+      };
+      await exportToExcel([sheetData], exportOptions);
+      setExportError('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出失败，请重试';
+      setExportError(message);
+    } finally {
+      setExporting(false);
+    }
+  }, [
+    comparisonResult,
+    currentFirstSheet,
+    currentSecondSheet,
+    includeUniqueFromFirst,
+    includeUniqueFromSecond,
+    includeModifiedRows,
+    highlightChanges,
+    mergeSheetName,
+    mergeOptionsSelected
+  ]);
+
+  const handleExportComparisonCSV = useCallback(() => {
+    if (!comparisonResult || !currentFirstSheet || !currentSecondSheet || !mergeOptionsSelected) {
+      return;
+    }
+    try {
+      const trimmedName = mergeSheetName.trim();
+      const sheetName = trimmedName || `${currentFirstSheet.name}_${currentSecondSheet.name}_差异报告`;
+      const sheetData = createComparisonMergeSheet(currentFirstSheet, currentSecondSheet, comparisonResult, {
+        sheetName,
+        includeUniqueFromFirst,
+        includeUniqueFromSecond,
+        includeModifiedRows,
+        highlightChanges,
+        firstSourceLabel: currentFirstSheet.name,
+        secondSourceLabel: currentSecondSheet.name
+      });
+      exportToCSV(sheetData);
+      setExportError('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出失败，请重试';
+      setExportError(message);
+    }
+  }, [
+    comparisonResult,
+    currentFirstSheet,
+    currentSecondSheet,
+    includeUniqueFromFirst,
+    includeUniqueFromSecond,
+    includeModifiedRows,
+    highlightChanges,
+    mergeSheetName,
+    mergeOptionsSelected
+  ]);
+
+  useEffect(() => {
+    if (!comparisonResult) {
+      return;
+    }
+    const available = comparisonResult.headerDifferences.commonColumns;
+    const availableSet = new Set(available);
+    const filtered = selectedKeyColumns.filter(column => availableSet.has(column));
+    if (filtered.length !== selectedKeyColumns.length) {
+      setSelectedKeyColumns(filtered);
+      return;
+    }
+    if (filtered.length === 0 && comparisonResult.metadata.keyColumns.length > 0) {
+      setSelectedKeyColumns(comparisonResult.metadata.keyColumns);
+    }
+  }, [comparisonResult, selectedKeyColumns]);
 
   return (
     <Dialog
@@ -236,6 +561,142 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
             </Select>
           </FormControl>
         </Box>
+
+        {canCompare && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
+            <Typography variant="h6">对齐与主键设置</Typography>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={alignmentMode}
+              onChange={handleAlignmentModeChange}
+            >
+              <ToggleButton value="auto">按列名匹配</ToggleButton>
+              <ToggleButton value="manual">手动映射</ToggleButton>
+            </ToggleButtonGroup>
+
+            {alignmentMode === 'manual' && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 1
+                  }}
+                >
+                  <Typography variant="subtitle2" color="text.secondary">
+                    映射不同名称但含义相同的列
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<AddCircleOutlineIcon />}
+                    onClick={handleAddManualMapping}
+                    disabled={firstHeadersLength === 0 || secondHeadersLength === 0}
+                  >
+                    添加映射
+                  </Button>
+                </Box>
+                {manualMappings.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    暂无手动映射，将继续按表头名称自动匹配。
+                  </Typography>
+                ) : (
+                  manualMappings.map((mapping, index) => (
+                    <Box
+                      key={index}
+                      sx={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 1,
+                        alignItems: 'center'
+                      }}
+                    >
+                      <FormControl sx={{ flex: 1, minWidth: 200 }} size="small">
+                        <InputLabel>第一个工作表列</InputLabel>
+                        <Select
+                          value={mapping.firstColumnIndex}
+                          label="第一个工作表列"
+                          onChange={(event) =>
+                            handleManualMappingIndexChange(index, 'firstColumnIndex', event.target.value)
+                          }
+                        >
+                          {originalFirstHeaders.map((header, headerIndex) => (
+                            <MenuItem key={headerIndex} value={headerIndex}>
+                              {`${header ?? `列${headerIndex + 1}`} (索引${headerIndex + 1})`}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <FormControl sx={{ flex: 1, minWidth: 200 }} size="small">
+                        <InputLabel>第二个工作表列</InputLabel>
+                        <Select
+                          value={mapping.secondColumnIndex}
+                          label="第二个工作表列"
+                          onChange={(event) =>
+                            handleManualMappingIndexChange(index, 'secondColumnIndex', event.target.value)
+                          }
+                        >
+                          {originalSecondHeaders.map((header, headerIndex) => (
+                            <MenuItem key={headerIndex} value={headerIndex}>
+                              {`${header ?? `列${headerIndex + 1}`} (索引${headerIndex + 1})`}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <TextField
+                        size="small"
+                        label="统一列名"
+                        value={mapping.label ?? ''}
+                        onChange={(event) => handleManualMappingLabelChange(index, event.target.value)}
+                        sx={{ minWidth: 200, flex: 1 }}
+                      />
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleRemoveManualMapping(index)}
+                        aria-label="删除映射"
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  ))
+                )}
+              </Box>
+            )}
+
+            <FormControl
+              size="small"
+              sx={{ maxWidth: 360 }}
+              disabled={availableKeyColumns.length === 0}
+            >
+              <InputLabel>对比主键列</InputLabel>
+              <Select
+                multiple
+                value={selectedKeyColumns}
+                onChange={handleKeyColumnsChange}
+                label="对比主键列"
+                renderValue={(selected) =>
+                  selected.length > 0 ? selected.join('，') : '自动使用首个公共列'
+                }
+              >
+                {availableKeyColumns.map(column => (
+                  <MenuItem key={column} value={column}>
+                    <Checkbox checked={selectedKeyColumns.indexOf(column) > -1} />
+                    <ListItemText primary={column} />
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>
+                {availableKeyColumns.length === 0
+                  ? '没有公共列，将按行对比。'
+                  : '支持选择多个列作为组合主键。'}
+              </FormHelperText>
+            </FormControl>
+          </Box>
+        )}
 
         {/* 对比结果 */}
         {comparisonResult && (
@@ -304,8 +765,48 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
               </AccordionDetails>
             </Accordion>
 
+            <Divider sx={{ my: 3 }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 2 }}>
+              <Typography variant="subtitle2">差异筛选</Typography>
+              <FormGroup row sx={{ alignItems: 'center' }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={visibleDiffTypes.uniqueToFirst}
+                      onChange={() => handleToggleDiffVisibility('uniqueToFirst')}
+                    />
+                  }
+                  label={`${sheets[firstSheetIndex]?.name || '工作表1'} 独有`}
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={visibleDiffTypes.uniqueToSecond}
+                      onChange={() => handleToggleDiffVisibility('uniqueToSecond')}
+                    />
+                  }
+                  label={`${sheets[secondSheetIndex]?.name || '工作表2'} 独有`}
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={visibleDiffTypes.modified}
+                      onChange={() => handleToggleDiffVisibility('modified')}
+                    />
+                  }
+                  label="修改行"
+                />
+              </FormGroup>
+              <Button size="small" variant="text" onClick={handleShowOnlyModified}>
+                仅显示修改
+              </Button>
+              <Button size="small" variant="text" onClick={handleShowAllDiffs}>
+                显示全部
+              </Button>
+            </Box>
+
             {/* 数据差异 - 第一个表独有的行 */}
-            {comparisonResult.dataDifferences.uniqueToFirst.length > 0 && (
+            {visibleDiffTypes.uniqueToFirst && comparisonResult.dataDifferences.uniqueToFirst.length > 0 && (
               <Accordion>
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Typography variant="h6">
@@ -317,7 +818,7 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          {firstHeaders.map((header, index) => (
+                          {displayFirstHeaders.map((header, index) => (
                             <TableCell
                               key={index}
                               sx={{
@@ -327,7 +828,7 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                                 fontWeight: 600
                               }}
                             >
-                              {header || `列${index + 1}`}
+                              {header}
                             </TableCell>
                           ))}
                         </TableRow>
@@ -358,7 +859,7 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
             )}
 
             {/* 数据差异 - 第二个表独有的行 */}
-            {comparisonResult.dataDifferences.uniqueToSecond.length > 0 && (
+            {visibleDiffTypes.uniqueToSecond && comparisonResult.dataDifferences.uniqueToSecond.length > 0 && (
               <Accordion>
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Typography variant="h6">
@@ -370,7 +871,7 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          {secondHeaders.map((header, index) => (
+                          {displaySecondHeaders.map((header, index) => (
                             <TableCell
                               key={index}
                               sx={{
@@ -380,7 +881,7 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                                 fontWeight: 600
                               }}
                             >
-                              {header || `列${index + 1}`}
+                              {header}
                             </TableCell>
                           ))}
                         </TableRow>
@@ -411,7 +912,7 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
             )}
 
             {/* 修改过的行 */}
-            {comparisonResult.dataDifferences.modifiedRows.length > 0 && (
+            {visibleDiffTypes.modified && comparisonResult.dataDifferences.modifiedRows.length > 0 && (
               <Accordion>
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Typography variant="h6">
@@ -422,7 +923,12 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                   {comparisonResult.dataDifferences.modifiedRows.slice(0, 5).map((modifiedRow, index) => (
                     <Box key={index} sx={{ mb: 2, p: 2, border: 1, borderColor: 'divider', borderRadius: 1 }}>
                       <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                        主键: {String(modifiedRow.firstRow[0])}
+                        主键:{' '}
+                        {comparisonResult.metadata.keyColumns.length > 0
+                          ? comparisonResult.metadata.keyColumns
+                              .map(column => `${column}=${modifiedRow.keyValues?.[column] ?? '-'}`)
+                              .join('，')
+                          : formatCellValue(modifiedRow.firstRow[0])}
                       </Typography>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                         {modifiedRow.differences.map((diff, diffIndex) => (
@@ -445,6 +951,35 @@ const CompareSheetsDialog: React.FC<CompareSheetsDialogProps> = ({
                 </AccordionDetails>
               </Accordion>
             )}
+
+            <Divider sx={{ my: 3 }} />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="h6">差异报告导出</Typography>
+              <Typography variant="body2" color="text.secondary">
+                导出当前筛选与合并配置对应的差异清单，便于离线查看或分享。
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                <Button
+                  variant="contained"
+                  onClick={handleExportComparisonExcel}
+                  disabled={!mergeOptionsSelected || exporting}
+                >
+                  导出Excel报告
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={handleExportComparisonCSV}
+                  disabled={!mergeOptionsSelected || exporting}
+                >
+                  导出CSV报告
+                </Button>
+              </Box>
+              {exportError && (
+                <Alert severity="error" onClose={() => setExportError('')}>
+                  {exportError}
+                </Alert>
+              )}
+            </Box>
 
             {onCreateMergedSheet && (
               <>

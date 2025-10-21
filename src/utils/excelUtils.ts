@@ -1034,6 +1034,24 @@ const buildMergedProperties = (sheets: SheetData[], allColumns: string[], merged
 /**
  * 差异对比结果接口
  */
+export interface ColumnMapping {
+  firstColumnIndex: number;
+  secondColumnIndex: number;
+  label?: string;
+}
+
+export interface ResolvedColumnMapping extends ColumnMapping {
+  label: string;
+  firstColumnName: string;
+  secondColumnName: string;
+}
+
+export interface ComparisonOptions {
+  alignmentMode?: 'auto' | 'manual';
+  manualColumnMappings?: ColumnMapping[];
+  keyColumns?: string[];
+}
+
 export interface ComparisonResult {
   headerDifferences: {
     commonColumns: string[];
@@ -1048,6 +1066,7 @@ export interface ComparisonResult {
       firstRow: any[];
       secondRow: any[];
       differences: { column: string; firstValue: any; secondValue: any }[];
+      keyValues?: Record<string, string>;
     }[];
   };
   summary: {
@@ -1057,6 +1076,11 @@ export interface ComparisonResult {
     uniqueToFirstCount: number;
     uniqueToSecondCount: number;
     modifiedRowsCount: number;
+  };
+  metadata: {
+    alignmentMode: 'auto' | 'manual';
+    keyColumns: string[];
+    manualColumnMappings: ResolvedColumnMapping[];
   };
 }
 
@@ -1078,25 +1102,54 @@ export const compareSheets = (
   secondSheet: SheetData,
   firstSheetIndex: number,
   secondSheetIndex: number,
-  editedRows: EditedRowData
+  editedRows: EditedRowData,
+  options: ComparisonOptions = {}
 ): ComparisonResult => {
   const firstHeaders = getHeaderRow(firstSheet);
   const secondHeaders = getHeaderRow(secondSheet);
-  
-  // 获取包含编辑数据的行
+
+  const alignmentMode = options.alignmentMode ?? 'auto';
+  const manualMappingsInput = Array.isArray(options.manualColumnMappings) ? options.manualColumnMappings : [];
+  const resolvedMappings = alignmentMode === 'manual'
+    ? resolveManualMappings(manualMappingsInput, firstHeaders, secondHeaders)
+    : [];
+
+  const { normalizedFirstHeaders, normalizedSecondHeaders } = normalizeHeadersWithMappings(
+    firstHeaders,
+    secondHeaders,
+    resolvedMappings
+  );
+
   const firstRows = getRowsWithEdits(getDataRows(firstSheet), firstSheetIndex, editedRows);
   const secondRows = getRowsWithEdits(getDataRows(secondSheet), secondSheetIndex, editedRows);
 
-  // 分析表头差异
-  const firstHeaderSet = new Set(firstHeaders);
-  const secondHeaderSet = new Set(secondHeaders);
-  
-  const commonColumns = firstHeaders.filter(col => secondHeaderSet.has(col));
-  const uniqueToFirst = firstHeaders.filter(col => !secondHeaderSet.has(col));
-  const uniqueToSecond = secondHeaders.filter(col => !firstHeaderSet.has(col));
+  const firstHeaderSet = new Set(normalizedFirstHeaders);
+  const secondHeaderSet = new Set(normalizedSecondHeaders);
 
-  // 分析数据差异
-  const dataDifferences = compareDataRows(firstRows, secondRows, firstHeaders, secondHeaders);
+  const commonColumns = Array.from(
+    new Set(normalizedFirstHeaders.filter(column => secondHeaderSet.has(column)))
+  );
+  const uniqueToFirst = Array.from(
+    new Set(normalizedFirstHeaders.filter(column => !secondHeaderSet.has(column)))
+  );
+  const uniqueToSecond = Array.from(
+    new Set(normalizedSecondHeaders.filter(column => !firstHeaderSet.has(column)))
+  );
+
+  const requestedKeyColumns = Array.isArray(options.keyColumns) ? options.keyColumns.filter(Boolean) : [];
+  let effectiveKeyColumns = requestedKeyColumns.filter(column => firstHeaderSet.has(column) && secondHeaderSet.has(column));
+  if (effectiveKeyColumns.length === 0 && commonColumns.length > 0) {
+    effectiveKeyColumns = [commonColumns[0]];
+  }
+
+  const dataDifferences = compareDataRows(
+    firstRows,
+    secondRows,
+    normalizedFirstHeaders,
+    normalizedSecondHeaders,
+    commonColumns,
+    effectiveKeyColumns
+  );
 
   return {
     headerDifferences: {
@@ -1112,8 +1165,101 @@ export const compareSheets = (
       uniqueToFirstCount: dataDifferences.uniqueToFirst.length,
       uniqueToSecondCount: dataDifferences.uniqueToSecond.length,
       modifiedRowsCount: dataDifferences.modifiedRows.length
+    },
+    metadata: {
+      alignmentMode,
+      keyColumns: effectiveKeyColumns,
+      manualColumnMappings: resolvedMappings
     }
   };
+};
+
+const resolveManualMappings = (
+  mappings: ColumnMapping[],
+  firstHeaders: string[],
+  secondHeaders: string[]
+): ResolvedColumnMapping[] => {
+  if (!Array.isArray(mappings) || mappings.length === 0) {
+    return [];
+  }
+
+  const normalized: Map<string, ResolvedColumnMapping> = new Map();
+
+  mappings.forEach(mapping => {
+    if (
+      typeof mapping.firstColumnIndex !== 'number' ||
+      typeof mapping.secondColumnIndex !== 'number'
+    ) {
+      return;
+    }
+
+    const firstIndex = mapping.firstColumnIndex;
+    const secondIndex = mapping.secondColumnIndex;
+
+    if (
+      firstIndex < 0 ||
+      secondIndex < 0 ||
+      firstIndex >= firstHeaders.length ||
+      secondIndex >= secondHeaders.length
+    ) {
+      return;
+    }
+
+    const firstName = firstHeaders[firstIndex] ?? `列${firstIndex + 1}`;
+    const secondName = secondHeaders[secondIndex] ?? `列${secondIndex + 1}`;
+    const baseLabel = (mapping.label ?? firstName ?? secondName)?.toString().trim();
+    const label = baseLabel && baseLabel.length > 0 ? baseLabel : `列${firstIndex + 1}`;
+
+    const key = `${firstIndex}-${secondIndex}`;
+    normalized.set(key, {
+      firstColumnIndex: firstIndex,
+      secondColumnIndex: secondIndex,
+      label,
+      firstColumnName: firstName,
+      secondColumnName: secondName
+    });
+  });
+
+  return Array.from(normalized.values());
+};
+
+const normalizeHeadersWithMappings = (
+  firstHeaders: string[],
+  secondHeaders: string[],
+  mappings: ResolvedColumnMapping[]
+): { normalizedFirstHeaders: string[]; normalizedSecondHeaders: string[] } => {
+  if (!Array.isArray(mappings) || mappings.length === 0) {
+    return {
+      normalizedFirstHeaders: firstHeaders.map((header, index) => header ?? `列${index + 1}`),
+      normalizedSecondHeaders: secondHeaders.map((header, index) => header ?? `列${index + 1}`)
+    };
+  }
+
+  const firstLookup = new Map<number, string>();
+  const secondLookup = new Map<number, string>();
+
+  mappings.forEach(mapping => {
+    firstLookup.set(mapping.firstColumnIndex, mapping.label);
+    secondLookup.set(mapping.secondColumnIndex, mapping.label);
+  });
+
+  const normalizedFirstHeaders = firstHeaders.map((header, index) => {
+    if (firstLookup.has(index)) {
+      return firstLookup.get(index)!;
+    }
+    const value = header ?? `列${index + 1}`;
+    return value;
+  });
+
+  const normalizedSecondHeaders = secondHeaders.map((header, index) => {
+    if (secondLookup.has(index)) {
+      return secondLookup.get(index)!;
+    }
+    const value = header ?? `列${index + 1}`;
+    return value;
+  });
+
+  return { normalizedFirstHeaders, normalizedSecondHeaders };
 };
 
 /**
@@ -1123,7 +1269,9 @@ const compareDataRows = (
   firstRows: any[][],
   secondRows: any[][],
   firstHeaders: string[],
-  secondHeaders: string[]
+  secondHeaders: string[],
+  commonColumns: string[],
+  keyColumns: string[]
 ) => {
   const commonRows: any[][] = [];
   const uniqueToFirst: any[][] = [];
@@ -1134,43 +1282,134 @@ const compareDataRows = (
     differences: { column: string; firstValue: any; secondValue: any }[];
   }[] = [];
 
-  // 创建行的哈希映射，用于快速查找
-  const createRowHash = (row: any[], headers: string[]) => {
-    return row.map((cell, index) => `${headers[index]}:${cell}`).join('|');
-  };
+  const useKeyMatching = keyColumns.length > 0;
 
-  const firstRowHashes = new Map<string, { row: any[]; index: number }>();
-  const secondRowHashes = new Map<string, { row: any[]; index: number }>();
+  if (!useKeyMatching) {
+    const createRowHash = (row: any[], headers: string[]) =>
+      row.map((cell, index) => `${headers[index] ?? `列${index + 1}`}:${cell ?? ''}`).join('|');
 
-  // 为第一个sheet创建哈希映射
-  firstRows.forEach((row, index) => {
-    const hash = createRowHash(row, firstHeaders);
-    firstRowHashes.set(hash, { row, index });
+    const firstRowHashes = new Map<string, { row: any[]; index: number }>();
+    const secondRowHashes = new Map<string, { row: any[]; index: number }>();
+
+    firstRows.forEach((row, index) => {
+      const hash = createRowHash(row, firstHeaders);
+      firstRowHashes.set(hash, { row, index });
+    });
+
+    secondRows.forEach((row, index) => {
+      const hash = createRowHash(row, secondHeaders);
+      secondRowHashes.set(hash, { row, index });
+    });
+
+    firstRowHashes.forEach((firstData, hash) => {
+      if (secondRowHashes.has(hash)) {
+        commonRows.push(firstData.row);
+        secondRowHashes.delete(hash);
+      } else {
+        uniqueToFirst.push(firstData.row);
+      }
+    });
+
+    secondRowHashes.forEach(secondData => {
+      uniqueToSecond.push(secondData.row);
+    });
+
+    return {
+      commonRows,
+      uniqueToFirst,
+      uniqueToSecond,
+      modifiedRows
+    };
+  }
+
+  const firstIndexMap = createHeaderIndexMap(firstHeaders);
+  const secondIndexMap = createHeaderIndexMap(secondHeaders);
+
+  const secondEntries = secondRows.map((row, index) => {
+    const key = buildKey(row, secondIndexMap, keyColumns);
+    const commonHash = buildCommonHash(row, secondIndexMap, commonColumns);
+    return { row, index, key, commonHash };
   });
 
-  // 为第二个sheet创建哈希映射
-  secondRows.forEach((row, index) => {
-    const hash = createRowHash(row, secondHeaders);
-    secondRowHashes.set(hash, { row, index });
-  });
+  const rowsByKey = new Map<string, number[]>();
+  const rowsByCommonHash = new Map<string, number[]>();
 
-  // 找出完全相同的行
-  firstRowHashes.forEach((firstData, hash) => {
-    if (secondRowHashes.has(hash)) {
-      commonRows.push(firstData.row);
-      secondRowHashes.delete(hash); // 避免重复处理
-    } else {
-      uniqueToFirst.push(firstData.row);
+  secondEntries.forEach(entry => {
+    if (entry.key) {
+      const list = rowsByKey.get(entry.key) ?? [];
+      list.push(entry.index);
+      rowsByKey.set(entry.key, list);
+    }
+    if (entry.commonHash) {
+      const list = rowsByCommonHash.get(entry.commonHash) ?? [];
+      list.push(entry.index);
+      rowsByCommonHash.set(entry.commonHash, list);
     }
   });
 
-  // 剩余的第二sheet行都是独有的
-  secondRowHashes.forEach((secondData) => {
-    uniqueToSecond.push(secondData.row);
+  const usedSecondIndexes = new Set<number>();
+
+  const takeFromMap = (map: Map<string, number[]>, value: string | null) => {
+    if (!value) {
+      return null;
+    }
+    const list = map.get(value);
+    if (!list || list.length === 0) {
+      return null;
+    }
+    while (list.length > 0) {
+      const candidateIndex = list.shift()!;
+      if (usedSecondIndexes.has(candidateIndex)) {
+        continue;
+      }
+      usedSecondIndexes.add(candidateIndex);
+      return secondEntries[candidateIndex];
+    }
+    map.delete(value);
+    return null;
+  };
+
+  firstRows.forEach(row => {
+    const key = buildKey(row, firstIndexMap, keyColumns);
+    let matchedEntry = takeFromMap(rowsByKey, key);
+
+    if (!matchedEntry) {
+      const commonHash = buildCommonHash(row, firstIndexMap, commonColumns);
+      matchedEntry = takeFromMap(rowsByCommonHash, commonHash);
+    }
+
+    if (matchedEntry) {
+      const secondRow = matchedEntry.row;
+      if (rowsMatchOnColumns(row, secondRow, firstIndexMap, secondIndexMap, commonColumns)) {
+        commonRows.push(row);
+      } else {
+        const differences = collectDifferences(row, secondRow, firstIndexMap, secondIndexMap, commonColumns);
+        if (differences.length === 0) {
+          commonRows.push(row);
+        } else {
+          const keyValues: Record<string, string> = {};
+          keyColumns.forEach(column => {
+            const firstValue = getColumnValue(row, firstIndexMap.get(column));
+            keyValues[column] = formatCellValue(firstValue);
+          });
+          modifiedRows.push({
+            firstRow: row,
+            secondRow,
+            differences,
+            keyValues: Object.keys(keyValues).length > 0 ? keyValues : undefined
+          });
+        }
+      }
+    } else {
+      uniqueToFirst.push(row);
+    }
   });
 
-  // 找出部分匹配的行（相同主键但内容不同）
-  findModifiedRows(firstRows, secondRows, firstHeaders, secondHeaders, modifiedRows);
+  secondEntries.forEach(entry => {
+    if (!usedSecondIndexes.has(entry.index)) {
+      uniqueToSecond.push(entry.row);
+    }
+  });
 
   return {
     commonRows,
@@ -1180,75 +1419,108 @@ const compareDataRows = (
   };
 };
 
-/**
- * 找出修改过的行（假设第一列是主键）
- */
-const findModifiedRows = (
-  firstRows: any[][],
-  secondRows: any[][],
-  firstHeaders: string[],
-  secondHeaders: string[],
-  modifiedRows: {
-    firstRow: any[];
-    secondRow: any[];
-    differences: { column: string; firstValue: any; secondValue: any }[];
-  }[]
+const createHeaderIndexMap = (headers: string[]): Map<string, number[]> => {
+  const map = new Map<string, number[]>();
+  headers.forEach((header, index) => {
+    const key = header ?? `列${index + 1}`;
+    const list = map.get(key) ?? [];
+    list.push(index);
+    map.set(key, list);
+  });
+  return map;
+};
+
+const getColumnValue = (row: any[], indexes?: number[]): any => {
+  if (!indexes || indexes.length === 0) {
+    return '';
+  }
+  for (const idx of indexes) {
+    if (idx >= 0 && idx < row.length) {
+      return row[idx];
+    }
+  }
+  return '';
+};
+
+const buildKey = (
+  row: any[],
+  indexMap: Map<string, number[]>,
+  keyColumns: string[]
+): string | null => {
+  const parts: string[] = [];
+  for (const column of keyColumns) {
+    const indexes = indexMap.get(column);
+    if (!indexes) {
+      return null;
+    }
+    const value = getColumnValue(row, indexes);
+    const text = formatCellValue(value).trim();
+    if (text === '') {
+      return null;
+    }
+    parts.push(text);
+  }
+  if (parts.length === 0) {
+    return null;
+  }
+  return parts.join('||');
+};
+
+const buildCommonHash = (
+  row: any[],
+  indexMap: Map<string, number[]>,
+  columns: string[]
+): string | null => {
+  if (!columns || columns.length === 0) {
+    return null;
+  }
+  return columns
+    .map(column => {
+      const indexes = indexMap.get(column);
+      const value = getColumnValue(row, indexes);
+      return formatCellValue(value);
+    })
+    .join('|');
+};
+
+const rowsMatchOnColumns = (
+  firstRow: any[],
+  secondRow: any[],
+  firstIndexMap: Map<string, number[]>,
+  secondIndexMap: Map<string, number[]>,
+  columns: string[]
+): boolean => {
+  if (!columns || columns.length === 0) {
+    return JSON.stringify(firstRow) === JSON.stringify(secondRow);
+  }
+
+  return columns.every(column => {
+    const firstValue = getColumnValue(firstRow, firstIndexMap.get(column));
+    const secondValue = getColumnValue(secondRow, secondIndexMap.get(column));
+    return formatCellValue(firstValue) === formatCellValue(secondValue);
+  });
+};
+
+const collectDifferences = (
+  firstRow: any[],
+  secondRow: any[],
+  firstIndexMap: Map<string, number[]>,
+  secondIndexMap: Map<string, number[]>,
+  columns: string[]
 ) => {
-  // 创建基于第一列（主键）的映射
-  const firstRowsByKey = new Map<string, any[]>();
-  const secondRowsByKey = new Map<string, any[]>();
-
-  firstRows.forEach(row => {
-    if (row.length > 0) {
-      const key = String(row[0]);
-      firstRowsByKey.set(key, row);
-    }
-  });
-
-  secondRows.forEach(row => {
-    if (row.length > 0) {
-      const key = String(row[0]);
-      secondRowsByKey.set(key, row);
-    }
-  });
-
-  // 找出有相同主键但内容不同的行
-  firstRowsByKey.forEach((firstRow, key) => {
-    if (secondRowsByKey.has(key)) {
-      const secondRow = secondRowsByKey.get(key)!;
-      
-      // 比较行内容
-      const differences: { column: string; firstValue: any; secondValue: any }[] = [];
-      
-      // 比较公共列
-      const commonColumns = firstHeaders.filter(col => secondHeaders.includes(col));
-      commonColumns.forEach(column => {
-        const firstIndex = firstHeaders.indexOf(column);
-        const secondIndex = secondHeaders.indexOf(column);
-        
-        if (firstIndex !== -1 && secondIndex !== -1) {
-          const firstValue = firstRow[firstIndex];
-          const secondValue = secondRow[secondIndex];
-          
-          if (String(firstValue) !== String(secondValue)) {
-            differences.push({
-              column,
-              firstValue,
-              secondValue
-            });
-          }
-        }
+  const diffs: { column: string; firstValue: any; secondValue: any }[] = [];
+  columns.forEach(column => {
+    const firstValue = getColumnValue(firstRow, firstIndexMap.get(column));
+    const secondValue = getColumnValue(secondRow, secondIndexMap.get(column));
+    if (formatCellValue(firstValue) !== formatCellValue(secondValue)) {
+      diffs.push({
+        column,
+        firstValue,
+        secondValue
       });
-
-      if (differences.length > 0) {
-        modifiedRows.push({
-          firstRow,
-          secondRow,
-          differences
-        });
-      }
     }
   });
+  return diffs;
 };
 
 export const createComparisonMergeSheet = (
