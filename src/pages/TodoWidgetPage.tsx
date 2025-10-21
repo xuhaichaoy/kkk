@@ -39,6 +39,7 @@ import {
 	updateTodoAtom,
 	upsertTimeEntryAtom,
 } from "../stores/todoStore";
+import { getNextHalfHourIsoString } from "../utils/todoUtils";
 
 type QuickNote = {
 	id: string;
@@ -165,16 +166,17 @@ const TodoWidgetPage: FC = () => {
 	const handleAddTask = () => {
 		const trimmed = title.trim();
 		if (!trimmed) return;
-	addTodo({
-		title: trimmed,
-		description: "",
-		notes: "",
-		reflection: "",
-		priority: "none",
-		completed: false,
-		tags: [],
-		reminderSent: false,
-	});
+		addTodo({
+			title: trimmed,
+			description: "",
+			notes: "",
+			reflection: "",
+			priority: "none",
+			completed: false,
+			dueDate: getNextHalfHourIsoString(),
+			tags: [],
+			reminderSent: false,
+		});
 		setTitle("");
 	};
 

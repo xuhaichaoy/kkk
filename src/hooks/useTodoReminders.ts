@@ -10,6 +10,7 @@ import {
   sendNativeNotification,
 } from '../utils/notificationUtils';
 import { debugError, debugLog } from '../utils/logger';
+import { extractTextFromHtml } from '../utils/richTextUtils';
 
 const REMINDER_GRACE_WINDOW_MINUTES = 10;
 
@@ -59,9 +60,12 @@ export const useTodoReminders = () => {
 
         try {
           debugLog('Sending notification for task:', task.title);
+          const notificationBody = task.description
+            ? extractTextFromHtml(task.description) || '该完成任务了！'
+            : '该完成任务了！';
           await sendNativeNotification({
             title: `任务提醒: ${task.title}`,
-            body: task.description ? task.description : '该完成任务了！',
+            body: notificationBody,
           });
           debugLog('Notification sent successfully for task:', task.title);
         } catch (error) {

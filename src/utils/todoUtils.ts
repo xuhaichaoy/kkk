@@ -17,6 +17,7 @@ import type {
 	TodoStatus,
 	TodoTask,
 } from "../stores/todoStore";
+import { extractTextFromHtml } from "./richTextUtils";
 
 const parseDateValue = (value?: string): Date | null => {
     if (!value) return null;
@@ -81,14 +82,44 @@ const dueValue = (task: TodoTask) => {
 	return due ? due.getTime() : Number.POSITIVE_INFINITY;
 };
 
+export const getNextHalfHour = (referenceDate: Date = new Date()): Date => {
+	const next = new Date(referenceDate);
+	next.setSeconds(0, 0);
+	if (next.getMinutes() < 30) {
+		next.setMinutes(30);
+	} else {
+		next.setHours(next.getHours() + 1);
+		next.setMinutes(0);
+	}
+
+	// 如果跨到次日的 00:00，则调整为 00:01
+	if (next.getHours() === 0 && next.getMinutes() === 0) {
+		next.setMinutes(1);
+	}
+
+	return next;
+};
+
+export const getNextHalfHourIsoString = (referenceDate?: Date): string =>
+	getNextHalfHour(referenceDate).toISOString();
+
 export const matchesSearch = (task: TodoTask, search: string) => {
 	if (!search) return true;
 	const lower = search.toLowerCase();
+	const descriptionText = task.description
+		? extractTextFromHtml(task.description).toLowerCase()
+		: "";
+	const notesText = task.notes
+		? extractTextFromHtml(task.notes).toLowerCase()
+		: "";
+	const reflectionText = task.reflection
+		? extractTextFromHtml(task.reflection).toLowerCase()
+		: "";
 	return (
 		task.title.toLowerCase().includes(lower) ||
-		task.description?.toLowerCase().includes(lower) ||
-		task.notes?.toLowerCase().includes(lower) ||
-		task.reflection?.toLowerCase().includes(lower) ||
+		descriptionText.includes(lower) ||
+		notesText.includes(lower) ||
+		reflectionText.includes(lower) ||
 		task.tags.some((tag) => tag.toLowerCase().includes(lower))
 	);
 };
@@ -570,7 +601,11 @@ export const generateWeeklyReflection = (
 				!completedAt && updatedAt ? `更新：${updatedAt}` : "",
 			].filter(Boolean);
 			lines.push(`- ${labelParts.join(" ｜ ")}`);
-			lines.push(`  反思：${task.reflection?.trim() ?? ""}`);
+			const reflectionText = extractTextFromHtml(task.reflection ?? "");
+			if (reflectionText) {
+				lines.push(`  反思：${reflectionText}`);
+			}
+			lines.push(""); // 空行分隔不同任务反思
 		});
 	} else {
 		lines.push("- 本周暂无反思记录，可在任务详情中补充「反思」。");

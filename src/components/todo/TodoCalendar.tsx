@@ -36,6 +36,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import type { TodoPriority, TodoStatus, TodoTask } from '../../stores/todoStore';
 import { getTaskDateRange } from '../../utils/todoUtils';
+import { normalizeRichTextValue, sanitizeRichText } from '../../utils/richTextUtils';
 import TaskQuickForm from './TaskQuickForm';
 
 export interface CalendarTaskFormValues {
@@ -199,9 +200,9 @@ const TodoCalendar: FC<TodoCalendarProps> = ({
     if (mode === 'edit' && task) {
       setEditorValues({
         title: task.title,
-        description: task.description,
-        notes: task.notes,
-        reflection: task.reflection ?? '',
+        description: sanitizeRichText(task.description ?? ''),
+        notes: sanitizeRichText(task.notes ?? ''),
+        reflection: sanitizeRichText(task.reflection ?? ''),
         priority: task.priority ?? 'none',
         completed: task.completed,
         dueDate: task.dueDate,
@@ -252,9 +253,11 @@ const TodoCalendar: FC<TodoCalendarProps> = ({
     value: CalendarTaskFormValues[K],
   ) => {
     setEditorValues((prev) => {
+      const normalizedValue =
+        typeof value === 'string' ? sanitizeRichText(value) : value;
       const next = {
         ...prev,
-        [key]: value,
+        [key]: normalizedValue as CalendarTaskFormValues[K],
       } as CalendarTaskFormValues;
       if (key === 'dateMode' && value === 'single') {
         next.dueDateEnd = undefined;
@@ -279,9 +282,9 @@ const TodoCalendar: FC<TodoCalendarProps> = ({
     const normalizedValues: CalendarTaskFormValues = {
       ...editorValues,
       title,
-      description: editorValues.description?.trim() || undefined,
-      notes: editorValues.notes?.trim() || undefined,
-      reflection: editorValues.reflection?.trim() || undefined,
+      description: normalizeRichTextValue(editorValues.description),
+      notes: normalizeRichTextValue(editorValues.notes),
+      reflection: normalizeRichTextValue(editorValues.reflection),
       status: editorValues.completed
         ? 'completed'
         : editorValues.status ?? (editorState.task?.status ?? 'notStarted'),

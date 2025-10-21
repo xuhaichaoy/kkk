@@ -16,6 +16,7 @@ import {
 	upsertCategoryAtom,
 	upsertTagAtom,
 } from "../stores/todoStore";
+import { normalizeRichTextValue } from "../utils/richTextUtils";
 
 const TodoCalendarPage: FC = () => {
 	const todos = useAtomValue(todosAtom);
@@ -76,11 +77,15 @@ const TodoCalendarPage: FC = () => {
 				upsertCategory(categoryValue);
 			}
 
+			const normalizedDescription = normalizeRichTextValue(input.description);
+			const normalizedNotes = normalizeRichTextValue(input.notes);
+			const normalizedReflection = normalizeRichTextValue(input.reflection);
+
 			addTodo({
 				title: input.title,
-				description: input.description,
-				notes: input.notes,
-				reflection: input.reflection?.trim() || undefined,
+				description: normalizedDescription,
+				notes: normalizedNotes,
+				reflection: normalizedReflection,
 				priority: input.priority,
 				completed: input.completed,
 				dueDate,
@@ -97,7 +102,6 @@ const TodoCalendarPage: FC = () => {
 	const handleUpdateTask = useCallback(
 		(id: string, changes: CalendarTaskFormValues) => {
 			const categoryValue = changes.category?.trim();
-			const reflectionValue = changes.reflection?.trim();
 			const cleanedTags = Array.from(
 				new Set(
 					(changes.tags ?? [])
@@ -118,11 +122,15 @@ const TodoCalendarPage: FC = () => {
 				upsertCategory(categoryValue);
 			}
 
+			const normalizedDescription = normalizeRichTextValue(changes.description);
+			const normalizedNotes = normalizeRichTextValue(changes.notes);
+			const normalizedReflection = normalizeRichTextValue(changes.reflection);
+
 			const updatePayload: Partial<TodoTask> = {
 				title: changes.title,
-				description: changes.description,
-				notes: changes.notes,
-				reflection: reflectionValue || undefined,
+				description: normalizedDescription,
+				notes: normalizedNotes,
+				reflection: normalizedReflection,
 				priority: changes.priority,
 				completed: changes.completed,
 				dueDate: changes.dueDate,

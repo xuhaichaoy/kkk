@@ -16,6 +16,7 @@ import Autocomplete from "@mui/material/Autocomplete";
 import dayjs, { type Dayjs } from "dayjs";
 import type { CalendarTaskFormValues } from "./TodoCalendar";
 import type { TodoPriority, TodoStatus } from "../../stores/todoStore";
+import RichTextEditor from "../common/RichTextEditor";
 
 const isoToDayjs = (value?: string): Dayjs | null => {
 	if (!value) return null;
@@ -25,9 +26,17 @@ const isoToDayjs = (value?: string): Dayjs | null => {
 
 const dayjsToIso = (
 	value: Dayjs | null,
-	options?: { fallback?: "startOfDay" | "endOfDay" },
+	options?: {
+		fallback?: "startOfDay" | "endOfDay";
+		offsetHours?: number;
+	},
 ): string | undefined => {
 	if (!value || !value.isValid()) return undefined;
+
+	const offsetHours = options?.offsetHours;
+	if (typeof offsetHours === "number") {
+		value = value.add(offsetHours, "hour");
+	}
 
 	if (options?.fallback === "startOfDay") {
 		return value.startOf("day").toISOString();
@@ -69,6 +78,14 @@ const TaskQuickForm: React.FC<TaskQuickFormProps> = ({
 	titleHelperText,
 	autoFocusTitle,
 }) => {
+	const startDate = isoToDayjs(values.dueDate);
+	const rawEndDate = isoToDayjs(values.dueDateEnd);
+	const displayEndDate =
+		rawEndDate ??
+		(values.dateMode === "range" && startDate
+			? startDate.add(1, "hour")
+			: null);
+
 	return (
 		<Stack spacing={2}>
 			<Stack spacing={1.5}>
@@ -79,6 +96,24 @@ const TaskQuickForm: React.FC<TaskQuickFormProps> = ({
 					exclusive
 					onChange={(_, mode) => {
 						if (!mode) return;
+						if (mode === "range") {
+							const effectiveStart = startDate?.isValid()
+								? startDate
+								: dayjs();
+							onChange("dueDate", dayjsToIso(effectiveStart));
+							const currentEnd = isoToDayjs(values.dueDateEnd);
+							if (
+								!currentEnd ||
+								!currentEnd.isAfter(effectiveStart)
+							) {
+								onChange(
+									"dueDateEnd",
+									dayjsToIso(effectiveStart, { offsetHours: 1 }),
+								);
+							}
+						} else {
+							onChange("dueDateEnd", undefined);
+						}
 						onChange("dateMode", mode);
 					}}
 					sx={{ alignSelf: "flex-start" }}
@@ -90,24 +125,56 @@ const TaskQuickForm: React.FC<TaskQuickFormProps> = ({
 				{values.dateMode === "single" ? (
 					<DateTimePicker
 						label="任务日期"
-						value={isoToDayjs(values.dueDate)}
+						value={startDate}
 						onChange={(value) => onChange("dueDate", dayjsToIso(value))}
+						ampm={false}
+						views={["year", "month", "day", "hours", "minutes"]}
+						format="YYYY-MM-DD HH:mm"
+						timeSteps={{ minutes: 1 }}
 						slotProps={{ textField: { size: "small", fullWidth: true } }}
 					/>
 				) : (
 					<Stack spacing={1.5}>
 						<DateTimePicker
 							label="开始时间"
-							value={isoToDayjs(values.dueDate)}
-							onChange={(value) => onChange("dueDate", dayjsToIso(value))}
+							value={startDate}
+							onChange={(pickerValue) => {
+								onChange("dueDate", dayjsToIso(pickerValue));
+								if (!pickerValue || !pickerValue.isValid()) {
+									return;
+								}
+								const previousStart = startDate;
+								const previousEnd = rawEndDate;
+								const previousWasDefault =
+									!previousEnd ||
+									(previousStart &&
+										previousEnd.diff(previousStart, "minute") === 60);
+
+								const shouldUpdateEnd =
+									previousWasDefault ||
+									(previousEnd ? !previousEnd.isAfter(pickerValue) : true);
+
+								if (shouldUpdateEnd) {
+									onChange("dueDateEnd", dayjsToIso(pickerValue, { offsetHours: 1 }));
+								}
+							}}
+							ampm={false}
+							views={["year", "month", "day", "hours", "minutes"]}
+							format="YYYY-MM-DD HH:mm"
+							timeSteps={{ minutes: 1 }}
 							slotProps={{
 								textField: { size: "small", fullWidth: true, required: true },
 							}}
 						/>
 						<DateTimePicker
 							label="结束时间"
-							value={isoToDayjs(values.dueDateEnd)}
+							value={displayEndDate}
 							onChange={(value) => onChange("dueDateEnd", dayjsToIso(value))}
+							ampm={false}
+							views={["year", "month", "day", "hours", "minutes"]}
+							format="YYYY-MM-DD HH:mm"
+							timeSteps={{ minutes: 1 }}
+							minDateTime={startDate ?? undefined}
 							slotProps={{
 								textField: {
 									size: "small",
@@ -132,34 +199,28 @@ const TaskQuickForm: React.FC<TaskQuickFormProps> = ({
 				onChange={(event) => onChange("title", event.target.value)}
 			/>
 
-			<TextField
+			<RichTextEditor
 				label="描述"
-				size="small"
-				fullWidth
-				multiline
-				minRows={3}
+				placeholder="补充任务细节，可粘贴图片"
 				value={values.description ?? ""}
-				onChange={(event) => onChange("description", event.target.value)}
+				onChange={(html) => onChange("description", html)}
+				minHeight={120}
 			/>
 
-			<TextField
+			<RichTextEditor
 				label="备注"
-				size="small"
-				fullWidth
-				multiline
-				minRows={2}
+				placeholder="记录补充信息，可粘贴图片"
 				value={values.notes ?? ""}
-				onChange={(event) => onChange("notes", event.target.value)}
+				onChange={(html) => onChange("notes", html)}
+				minHeight={100}
 			/>
 
-			<TextField
+			<RichTextEditor
 				label="反思"
-				size="small"
-				fullWidth
-				multiline
-				minRows={2}
+				placeholder="记录复盘心得，可粘贴图片"
 				value={values.reflection ?? ""}
-				onChange={(event) => onChange("reflection", event.target.value)}
+				onChange={(html) => onChange("reflection", html)}
+				minHeight={100}
 			/>
 
 			<Stack direction="row" spacing={1.5}>
@@ -198,6 +259,10 @@ const TaskQuickForm: React.FC<TaskQuickFormProps> = ({
 				onChange={(value) =>
 					onChange("reminder", dayjsToIso(value, { fallback: "startOfDay" }))
 				}
+				ampm={false}
+				views={["year", "month", "day", "hours", "minutes"]}
+				format="YYYY-MM-DD HH:mm"
+				timeSteps={{ minutes: 1 }}
 				slotProps={{
 					textField: {
 						size: "small",

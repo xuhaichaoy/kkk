@@ -6,7 +6,6 @@ import {
 	DialogContent,
 	DialogTitle,
 	Stack,
-	TextField,
 	Typography,
 } from "@mui/material";
 import dayjs, { type Dayjs } from "dayjs";
@@ -14,6 +13,11 @@ import { DateRangePicker } from "@mui/x-date-pickers-pro/DateRangePicker";
 import { AdapterDayjs } from "@mui/x-date-pickers-pro/AdapterDayjs";
 import { LocalizationProvider } from "@mui/x-date-pickers-pro/LocalizationProvider";
 import { getCurrentWeekRange, type DateRange } from "../../utils/todoUtils";
+import { RichTextEditor, RichTextViewer } from "../common";
+import {
+	ensureRichTextContent,
+	extractTextFromHtml,
+} from "../../utils/richTextUtils";
 
 interface TodoWeeklyReportDialogProps {
 	open: boolean;
@@ -62,12 +66,17 @@ const TodoWeeklyReportDialog = ({
 	range,
 	onRangeChange,
 }: TodoWeeklyReportDialogProps) => {
+	const normalizedReport = useMemo(
+		() => ensureRichTextContent(report),
+		[report],
+	);
 	const [copied, setCopied] = useState(false);
-	const [content, setContent] = useState(report);
+	const [content, setContent] = useState(normalizedReport);
 	const [pickerValue, setPickerValue] = useState<[Dayjs | null, Dayjs | null]>(() => [
 		dayjs(range.start),
 		dayjs(range.end),
 	]);
+	const contentText = useMemo(() => extractTextFromHtml(content ?? ""), [content]);
 
 	const rangeStartMillis = range.start.getTime();
 	const rangeEndMillis = range.end.getTime();
@@ -80,7 +89,7 @@ const TodoWeeklyReportDialog = ({
 
 	useEffect(() => {
 		if (open) {
-			setContent(report);
+			setContent(ensureRichTextContent(report));
 		}
 	}, [open, report]);
 
@@ -143,7 +152,7 @@ const TodoWeeklyReportDialog = ({
 
 	const handleCopy = async () => {
 		try {
-			const success = await copyToClipboard(content);
+			const success = await copyToClipboard(contentText);
 			setCopied(success);
 			if (success) {
 				setTimeout(() => setCopied(false), 2000);
@@ -179,22 +188,29 @@ const TodoWeeklyReportDialog = ({
 					<Typography variant="body2" color="text.secondary">
 						{description}
 					</Typography>
-					<TextField
-						multiline
-						fullWidth
-						minRows={14}
-						value={content}
-						onChange={(event) => {
-							if (!editable) return;
-							setContent(event.target.value);
-						}}
-						InputProps={{ readOnly: !editable }}
-					/>
+					{editable ? (
+						<RichTextEditor
+							value={content}
+							onChange={(value) => setContent(value)}
+							minHeight={240}
+							placeholder="可在此编辑周报内容，支持粘贴图片"
+						/>
+					) : (
+						<RichTextViewer
+							value={content}
+							minHeight={240}
+							placeholder="暂无周报内容"
+						/>
+					)}
 				</Stack>
 			</DialogContent>
 			<DialogActions>
 				<Button onClick={onClose}>关闭</Button>
-				<Button variant="contained" onClick={handleCopy} disabled={!content.trim()}>
+				<Button
+					variant="contained"
+					onClick={handleCopy}
+					disabled={!contentText.trim()}
+				>
 					{copied ? "已复制" : copyButtonLabel}
 				</Button>
 			</DialogActions>

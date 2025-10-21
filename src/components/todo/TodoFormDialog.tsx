@@ -7,6 +7,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { TodoStatus, TodoTask } from "../../stores/todoStore";
 import TaskQuickForm from "./TaskQuickForm";
 import type { CalendarTaskFormValues } from "./TodoCalendar";
+import { normalizeRichTextValue, sanitizeRichText } from "../../utils/richTextUtils";
+import { getNextHalfHourIsoString } from "../../utils/todoUtils";
 
 interface TodoFormDialogProps {
 	open: boolean;
@@ -49,7 +51,7 @@ const createDefaultValues = (): FormValues => ({
 	completed: false,
 	tags: [],
 	status: "notStarted",
-	dueDate: undefined,
+	dueDate: getNextHalfHourIsoString(),
 	dueDateEnd: undefined,
 	reminder: undefined,
 	dateMode: "single",
@@ -74,9 +76,9 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 		setValues({
 			id: initialTask.id,
 			title: initialTask.title,
-			description: initialTask.description ?? "",
-			notes: initialTask.notes ?? "",
-			reflection: initialTask.reflection ?? "",
+			description: sanitizeRichText(initialTask.description ?? ""),
+			notes: sanitizeRichText(initialTask.notes ?? ""),
+			reflection: sanitizeRichText(initialTask.reflection ?? ""),
 			priority: initialTask.priority ?? "none",
 			completed: initialTask.completed,
 			dueDate: initialTask.dueDate,
@@ -118,7 +120,12 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 	const handleFieldChange = useCallback(
 		<K extends keyof CalendarTaskFormValues>(key: K, value: CalendarTaskFormValues[K]) => {
 			setValues((prev) => {
-				const next: FormValues = { ...prev, [key]: value };
+				const normalizedValue =
+					typeof value === "string" ? sanitizeRichText(value) : value;
+				const next: FormValues = {
+					...prev,
+					[key]: normalizedValue as CalendarTaskFormValues[K],
+				};
 
 				if (key === "dateMode" && value === "single") {
 					next.dueDateEnd = undefined;
@@ -182,6 +189,10 @@ const TodoFormDialog: FC<TodoFormDialogProps> = ({
 		category: categoryValue,
 		dateMode: values.dateMode,
 	};
+
+	payload.description = normalizeRichTextValue(values.description);
+	payload.notes = normalizeRichTextValue(values.notes);
+	payload.reflection = normalizeRichTextValue(values.reflection);
 
 	if (payload.dateMode === "single") {
 		payload.dueDateEnd = undefined;

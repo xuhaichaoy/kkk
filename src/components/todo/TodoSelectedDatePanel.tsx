@@ -20,6 +20,7 @@ import { differenceInHours, format, isBefore } from "date-fns";
 import React, { type FC } from "react";
 import type { TodoPriority, TodoTask } from "../../stores/todoStore";
 import { getTaskDateRange, resolveTaskStatus, statusDisplayMap } from "../../utils/todoUtils";
+import { extractTextFromHtml } from "../../utils/richTextUtils";
 
 const priorityAvatarMeta: Record<TodoPriority, { bg: string; label: string; text?: string }> = {
 	high: { bg: "error.main", label: "高", text: "#fff" },
@@ -171,6 +172,9 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 				(sum, entry) => sum + entry.durationMinutes,
 				0,
 			);
+			const descriptionText = task.description
+				? extractTextFromHtml(task.description)
+				: "";
 				const now = new Date();
 				const isOverdue = Boolean(
 					rangeEnd &&
@@ -391,11 +395,11 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 											)}
 													</Stack>
 
-													{task.description && (
+													{descriptionText && (
 														<Typography
 															variant="caption"
 															color="text.secondary"
-															title={task.description}
+															title={descriptionText}
 															sx={{
 																overflow: "hidden",
 																textOverflow: "ellipsis",
@@ -403,7 +407,7 @@ const TodoSelectedDatePanel: FC<TodoSelectedDatePanelProps> = ({
 																fontSize: "0.75rem",
 															}}
 														>
-															{task.description}
+															{descriptionText}
 														</Typography>
 													)}
 

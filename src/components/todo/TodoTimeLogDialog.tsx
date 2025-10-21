@@ -151,6 +151,10 @@ const TodoTimeLogDialog: React.FC<TodoTimeLogDialogProps> = ({
 								}))
 							}
 							disabled={!task}
+							ampm={false}
+							views={["year", "month", "day", "hours", "minutes"]}
+							format="YYYY-MM-DD HH:mm"
+							timeSteps={{ minutes: 1 }}
 							slotProps={{
 								textField: {
 									fullWidth: true,

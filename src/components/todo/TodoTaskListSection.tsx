@@ -20,6 +20,7 @@ import TodoGanttView from "./TodoGanttView";
 import TodoKanbanBoard from "./TodoKanbanBoard";
 import TodoList from "./TodoList";
 import TodoToolbar from "./TodoToolbar";
+import { extractTextFromHtml } from "../../utils/richTextUtils";
 
 interface TodoTaskListSectionProps {
 	filteredTasks: TodoTask[];

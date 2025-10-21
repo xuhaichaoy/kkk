@@ -14,6 +14,8 @@ export { default as MergeSheetsDialog } from './MergeSheetsDialog';
 export { default as CompareSheetsDialog } from './CompareSheetsDialog';
 export { default as ExportSheetsDialog } from './ExportSheetsDialog';
 export { default as RenameSheetDialog } from './RenameSheetDialog';
+export { default as RichTextEditor } from './RichTextEditor';
+export { default as RichTextViewer } from './RichTextViewer';
 
 // 类型定义
 export type { TabItem } from './CustomTabs';
