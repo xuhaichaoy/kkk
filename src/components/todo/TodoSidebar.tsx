@@ -1,5 +1,6 @@
 import {
 	Box,
+	Button,
 	List,
 	ListItemButton,
 	ListItemIcon,
@@ -15,7 +16,7 @@ import {
 	alpha,
 	TextField,
 } from "@mui/material";
-import React, { type FC, useMemo, useState } from "react";
+import React, { type FC, useCallback, useMemo, useState } from "react";
 import TodayIcon from "@mui/icons-material/Today";
 import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
 import InboxIcon from "@mui/icons-material/Inbox";
@@ -47,6 +48,10 @@ interface TodoSidebarProps {
 	categories: string[];
 	onCreateCategory: (category: string) => void;
 	onRemoveCategory: (category: string) => void;
+	tags: string[];
+	activeTags: string[];
+	onToggleTag: (tag: string) => void;
+	onClearTagFilters: () => void;
 }
 
 const TodoSidebar: FC<TodoSidebarProps> = ({
@@ -56,6 +61,10 @@ const TodoSidebar: FC<TodoSidebarProps> = ({
 	categories,
 	onCreateCategory,
 	onRemoveCategory,
+	tags,
+	activeTags,
+	onToggleTag,
+	onClearTagFilters,
 }) => {
 	const theme = useTheme();
 	const [listsExpanded, setListsExpanded] = useState(true);
@@ -93,6 +102,48 @@ const TodoSidebar: FC<TodoSidebarProps> = ({
 	const completedCount = useMemo(
 		() => tasks.filter((t) => t.completed).length,
 		[tasks],
+	);
+
+	const tagCounts = useMemo(() => {
+		const counts: Record<string, number> = {};
+		tasks.forEach((task) => {
+			if (task.completed) return;
+			task.tags.forEach((tag) => {
+				const trimmed = tag.trim();
+				if (!trimmed) return;
+				counts[trimmed] = (counts[trimmed] ?? 0) + 1;
+			});
+		});
+		return counts;
+	}, [tasks]);
+
+	const tagColorPalette = useMemo(() => {
+		const secondary = theme.palette.secondary
+			? theme.palette.secondary.main
+			: alpha(theme.palette.primary.main, 0.7);
+		return [
+			theme.palette.primary.main,
+			theme.palette.success.main,
+			theme.palette.warning.main,
+			theme.palette.info.main,
+			secondary,
+			theme.palette.error.main,
+		];
+	}, [theme]);
+
+	const getTagColor = useCallback(
+		(tag: string) => {
+			if (tagColorPalette.length === 0) {
+				return theme.palette.primary.main;
+			}
+			let hash = 0;
+			for (let index = 0; index < tag.length; index += 1) {
+				hash = tag.charCodeAt(index) + ((hash << 5) - hash);
+			}
+			const colorIndex = Math.abs(hash) % tagColorPalette.length;
+			return tagColorPalette[colorIndex];
+		},
+		[tagColorPalette, theme.palette.primary.main],
 	);
 
 	const renderListItem = (
@@ -352,29 +403,6 @@ const TodoSidebar: FC<TodoSidebarProps> = ({
 					<Stack spacing={2} sx={{ px: 1.5 }}>
 						<Box>
 							<Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-								<FilterAltIcon
-									fontSize="small"
-									sx={{ color: "text.secondary" }}
-								/>
-								<Typography
-									variant="caption"
-									fontWeight={600}
-									color="text.secondary"
-								>
-									Filters
-								</Typography>
-							</Stack>
-							<Typography
-								variant="caption"
-								color="text.secondary"
-								sx={{ fontSize: "0.75rem", lineHeight: 1.4 }}
-							>
-								Display tasks filtered by list, date, priority, tag, and more
-							</Typography>
-						</Box>
-
-						<Box>
-							<Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
 								<LocalOfferIcon
 									fontSize="small"
 									sx={{ color: "text.secondary" }}
@@ -387,14 +415,90 @@ const TodoSidebar: FC<TodoSidebarProps> = ({
 									Tags
 								</Typography>
 							</Stack>
-							<Typography
-								variant="caption"
-								color="text.secondary"
-								sx={{ fontSize: "0.75rem", lineHeight: 1.4 }}
-							>
-								Categorize your tasks with tags. Quickly select a tag by typing
-								"#" when adding a task
-							</Typography>
+							{tags.length === 0 ? (
+								<Box sx={{ mt: 1.5 }}>
+									<Typography variant="caption" color="text.disabled">
+										暂无标签
+									</Typography>
+								</Box>
+							) : (
+								<>
+									<List dense sx={{ p: 0, mt: 1.5 }}>
+										{tags.map((tag) => {
+											const selected = activeTags.includes(tag);
+											const count = tagCounts[tag] ?? 0;
+											const tagColor = getTagColor(tag);
+											return (
+												<ListItemButton
+													key={tag}
+													selected={selected}
+													onClick={() => onToggleTag(tag)}
+													sx={{
+														borderRadius: 2,
+														px: 1.5,
+														p: .5,
+														transition: "background-color 0.2s ease",
+														"&:hover": {
+															backgroundColor: alpha(
+																theme.palette.primary.main,
+																selected ? 0.22 : 0.08,
+															),
+														},
+														"&.Mui-selected": {
+															backgroundColor: alpha(
+																theme.palette.primary.main,
+																0.12,
+															),
+															"&:hover": {
+																backgroundColor: alpha(
+																	theme.palette.primary.main,
+																	0.18,
+																),
+															},
+														},
+													}}
+												>
+													<ListItemText
+														primary={tag}
+														primaryTypographyProps={{
+															fontSize: "0.85rem",
+															fontWeight: selected ? 600 : 500,
+														}}
+													/>
+													<Stack
+														direction="row"
+														alignItems="center"
+														spacing={1}
+														sx={{ minWidth: 40, justifyContent: "flex-end" }}
+													>
+														<Box
+															component="span"
+															sx={{
+																width: 8,
+																height: 8,
+																borderRadius: "50%",
+																backgroundColor: tagColor,
+																boxShadow: selected
+																	? `0 0 0 4px ${alpha(tagColor, 0.16)}`
+																	: undefined,
+															}}
+														/>
+														<Typography
+															variant="caption"
+															sx={{
+																color: selected ? "text.primary" : "text.secondary",
+																fontWeight: selected ? 600 : 400,
+															}}
+														>
+															{count}
+														</Typography>
+													</Stack>
+												</ListItemButton>
+											);
+										})}
+									</List>
+								</>
+							)}
 						</Box>
 					</Stack>
 				</Box>

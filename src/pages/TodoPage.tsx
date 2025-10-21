@@ -381,6 +381,34 @@ const TodoPage: FC = () => {
 		setSidebarOpen((prev) => !prev);
 	}, []);
 
+	const handleToggleTagFilter = useCallback(
+		(tag: string) => {
+			setFilters((previous) => {
+				const hasTag = previous.tags.includes(tag);
+				const nextTags = hasTag
+					? previous.tags.filter((item) => item !== tag)
+					: [...previous.tags, tag];
+				return {
+					...previous,
+					tags: nextTags,
+				};
+			});
+		},
+		[setFilters],
+	);
+
+	const handleClearTagFilters = useCallback(() => {
+		setFilters((previous) => {
+			if (previous.tags.length === 0) {
+				return previous;
+			}
+			return {
+				...previous,
+				tags: [],
+			};
+		});
+	}, [setFilters]);
+
 	// 获取当前分类（用于新建任务时的默认分类）
 	const currentCategory = useMemo(() => {
 		if (sidebarView.startsWith("category:")) {
@@ -399,6 +427,10 @@ const TodoPage: FC = () => {
 					categories={categories}
 					onCreateCategory={upsertCategory}
 					onRemoveCategory={removeCategory}
+					tags={tags}
+					activeTags={filters.tags}
+					onToggleTag={handleToggleTagFilter}
+					onClearTagFilters={handleClearTagFilters}
 				/>
 			)}
 			<Box
