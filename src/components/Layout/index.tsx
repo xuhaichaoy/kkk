@@ -1,5 +1,5 @@
 import React from 'react';
-import { Avatar, Box, IconButton, Stack, Tooltip, useTheme } from '@mui/material';
+import { Avatar, Box, IconButton, Stack, Tooltip, Typography, useTheme } from '@mui/material';
 import { styled, alpha } from '@mui/material/styles';
 import { Link, useRouterState } from '@tanstack/react-router';
 import ChecklistRtlOutlinedIcon from '@mui/icons-material/ChecklistRtlOutlined';
@@ -8,6 +8,8 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
 import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined';
 import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import { LocalDataManagerDialog } from '../common';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -61,6 +63,7 @@ const NavIconButton = styled(IconButton, {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const theme = useTheme();
   const routerState = useRouterState();
+  const [dataManagerOpen, setDataManagerOpen] = React.useState(false);
 
   const tabs = React.useMemo(
     () => [
@@ -121,12 +124,38 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             );
           })}
         </Stack>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+          <Tooltip title="本地数据管理" placement="right">
+            <span>
+              <IconButton
+                size="large"
+                color="primary"
+                onClick={() => setDataManagerOpen(true)}
+                sx={{
+                  borderRadius: 14,
+                  width: 44,
+                  height: 44,
+                  bgcolor: alpha(theme.palette.primary.main, 0.12),
+                  '&:hover': {
+                    bgcolor: alpha(theme.palette.primary.main, 0.2),
+                  },
+                }}
+              >
+                <SettingsOutlinedIcon sx={{ fontSize: 24 }} />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Typography variant="caption" color="text.secondary">
+            数据
+          </Typography>
+        </Box>
       </Sidebar>
       <StyledMain sx={{ marginLeft: '72px' }}>
         <Box sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
           {children}
         </Box>
       </StyledMain>
+      <LocalDataManagerDialog open={dataManagerOpen} onClose={() => setDataManagerOpen(false)} />
     </>
   );
 };

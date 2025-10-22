@@ -3,8 +3,9 @@
 mod speech;
 
 use speech::{
-    cancel_transcription, delete_speech_session, ensure_speech_model, list_speech_sessions,
-    open_speech_session_folder, transcribe_audio, update_speech_session, SpeechManager,
+    cancel_transcription, delete_speech_session, ensure_speech_model, export_speech_sessions,
+    import_speech_sessions, list_speech_sessions, open_speech_session_folder, transcribe_audio,
+    update_speech_session, SpeechManager,
 };
 use tauri::Manager;
 use tauri_plugin_log::{fern::colors::ColoredLevelConfig, Target, TargetKind};
@@ -56,7 +57,9 @@ fn main() {
             update_speech_session,
             transcribe_audio,
             cancel_transcription,
-            open_speech_session_folder
+            open_speech_session_folder,
+            export_speech_sessions,
+            import_speech_sessions
         ])
         .plugin(tauri_plugin_fs::init())
         // 暂时禁用 window-state 插件来避免窗口状态冲突

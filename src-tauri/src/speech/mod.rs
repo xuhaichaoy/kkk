@@ -198,6 +198,18 @@ pub struct SpeechSession {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeechSessionBackup {
+    pub id: String,
+    pub title: String,
+    pub language: SpeechLanguage,
+    pub transcript: String,
+    pub segments: Vec<TranscriptSegment>,
+    pub created_at: String,
+    pub audio_filename: String,
+    pub audio_base64: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ModelStatusResponse {
     pub ready: bool,
@@ -574,6 +586,93 @@ impl SpeechManager {
         fs::write(&self.sessions_file, json)?;
         Ok(())
     }
+
+    pub async fn export_sessions_data(&self) -> Result<Vec<SpeechSessionBackup>, SpeechError> {
+        let guard = self.state.lock().await;
+        let mut exported = Vec::with_capacity(guard.sessions.len());
+        for session in &guard.sessions {
+            let audio_path = self.base_dir.join(&session.audio_path);
+            let audio_bytes = fs::read(&audio_path)?;
+            let filename = Path::new(&session.audio_path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("recording.wav")
+                .to_string();
+            let mime = if filename.to_lowercase().ends_with(".wav") {
+                "audio/wav"
+            } else {
+                "application/octet-stream"
+            };
+            let audio_base64 =
+                format!("data:{mime};base64,{}", BASE64_STANDARD.encode(&audio_bytes));
+
+            exported.push(SpeechSessionBackup {
+                id: session.id.clone(),
+                title: session.title.clone(),
+                language: session.language,
+                transcript: session.transcript.clone(),
+                segments: session.segments.clone(),
+                created_at: session.created_at.clone(),
+                audio_filename: filename,
+                audio_base64,
+            });
+        }
+        Ok(exported)
+    }
+
+    pub async fn import_sessions_data(
+        &self,
+        sessions: Vec<SpeechSessionBackup>,
+    ) -> Result<usize, SpeechError> {
+        if sessions.is_empty() {
+            return Ok(0);
+        }
+
+        let mut guard = self.state.lock().await;
+        let mut imported = 0usize;
+
+        for backup in sessions {
+            let audio_bytes = decode_audio_base64(&backup.audio_base64)?;
+            let sanitized_filename = sanitize_audio_filename(&backup.audio_filename);
+            let session_dir = self.sessions_dir.join(&backup.id);
+
+            if session_dir.exists() {
+                fs::remove_dir_all(&session_dir)?;
+            }
+            fs::create_dir_all(&session_dir)?;
+
+            let audio_path = session_dir.join(&sanitized_filename);
+            fs::write(&audio_path, &audio_bytes)?;
+            fs::write(session_dir.join("transcript.txt"), backup.transcript.as_bytes())?;
+            fs::write(
+                session_dir.join("segments.json"),
+                serde_json::to_vec_pretty(&backup.segments)?,
+            )?;
+
+            let audio_rel_path = format!("sessions/{}/{}", backup.id, sanitized_filename);
+            let session = SpeechSession {
+                id: backup.id.clone(),
+                title: backup.title.clone(),
+                language: backup.language,
+                transcript: backup.transcript.clone(),
+                segments: backup.segments.clone(),
+                audio_path: audio_rel_path,
+                created_at: backup.created_at.clone(),
+            };
+
+            if let Some(pos) = guard.sessions.iter().position(|s| s.id == session.id) {
+                guard.sessions.remove(pos);
+            }
+            guard.sessions.push(session);
+            imported += 1;
+        }
+
+        guard
+            .sessions
+            .sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        self.persist_sessions(&guard.sessions)?;
+        Ok(imported)
+    }
 }
 
 fn decode_audio_base64(data: &str) -> Result<Vec<u8>, SpeechError> {
@@ -756,6 +855,27 @@ fn resample_audio(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     output
 }
 
+fn sanitize_audio_filename(input: &str) -> String {
+    let fallback = "recording.wav";
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return fallback.to_string();
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return fallback.to_string();
+    }
+    let candidate = Path::new(trimmed)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(fallback)
+        .to_string();
+    if candidate.is_empty() {
+        fallback.to_string()
+    } else {
+        candidate
+    }
+}
+
 #[tauri::command]
 pub async fn ensure_speech_model(
     state: tauri::State<'_, SpeechManager>,
@@ -846,4 +966,25 @@ pub async fn open_speech_session_folder(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn export_speech_sessions(
+    state: tauri::State<'_, SpeechManager>,
+) -> Result<Vec<SpeechSessionBackup>, String> {
+    state
+        .export_sessions_data()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn import_speech_sessions(
+    state: tauri::State<'_, SpeechManager>,
+    sessions: Vec<SpeechSessionBackup>,
+) -> Result<usize, String> {
+    state
+        .import_sessions_data(sessions)
+        .await
+        .map_err(|e| e.to_string())
 }

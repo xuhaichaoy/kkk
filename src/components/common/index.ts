@@ -4,6 +4,7 @@ export { default as ErrorAlert } from './ErrorAlert';
 export { default as EmptyState } from './EmptyState';
 export { default as PageHeader } from './PageHeader';
 export { default as CardContainer } from './CardContainer';
+export { default as LocalDataManagerDialog } from './LocalDataManagerDialog';
 
 // 数据展示组件
 export { default as DataTable } from './DataTable';
