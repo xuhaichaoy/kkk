@@ -254,11 +254,9 @@ const TaskQuickForm: React.FC<TaskQuickFormProps> = ({
 			</Stack>
 
 			<DateTimePicker
-				label="提醒时间"
-				value={isoToDayjs(values.reminder)}
-				onChange={(value) =>
-					onChange("reminder", dayjsToIso(value, { fallback: "startOfDay" }))
-				}
+			label="提醒时间"
+			value={isoToDayjs(values.reminder)}
+			onChange={(value) => onChange("reminder", dayjsToIso(value))}
 				ampm={false}
 				views={["year", "month", "day", "hours", "minutes"]}
 				format="YYYY-MM-DD HH:mm"
