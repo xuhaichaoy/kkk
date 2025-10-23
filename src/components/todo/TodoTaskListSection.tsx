@@ -181,14 +181,6 @@ const TodoTaskListSection: FC<TodoTaskListSectionProps> = ({
 									onLogTime={onLogTime}
 								/>
 							</Box>
-
-							<Typography
-								variant="caption"
-								color="text.secondary"
-								sx={{ fontSize: "0.75rem", textAlign: "right", pt: 2 }}
-							>
-								进行中 {activeCount} 项
-							</Typography>
 						</Box>
 					) : viewMode === "gantt" ? (
 						<Box sx={{ flex: 1, overflowY: "auto" }}>
