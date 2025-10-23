@@ -10,6 +10,7 @@ import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined';
 import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import { LocalDataManagerDialog } from '../common';
+import { StatusBarProvider } from '../common/StatusBar';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -91,72 +92,74 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [currentPath, tabs]);
 
   return (
-    <>
-      <Sidebar>
-        <Avatar
-          sx={{
-            width: 48,
-            height: 48,
-            borderRadius: '22%',
-            backgroundColor: alpha(theme.palette.primary.main, 0.16),
-            color: theme.palette.primary.main,
-            fontWeight: 700,
-            fontSize: 20,
-          }}
-        >
-          B
-        </Avatar>
-        <Stack spacing={1.5} sx={{ flexGrow: 1, alignItems: 'center' }}>
-          {tabs.map(tab => {
-            const Icon = tab.icon;
-            const active = currentTab === tab.value;
-            return (
-              <Tooltip key={tab.value} title={tab.label} placement="right">
-                <Link to={tab.value} style={{ textDecoration: 'none' }}>
-                  <NavIconButton
-                    active={active}
-                    size="large"
-                  >
-                    <Icon sx={{ fontSize: 26 }} />
-                  </NavIconButton>
-                </Link>
-              </Tooltip>
-            );
-          })}
-        </Stack>
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-          <Tooltip title="本地数据管理" placement="right">
-            <span>
-              <IconButton
-                size="large"
-                color="primary"
-                onClick={() => setDataManagerOpen(true)}
-                sx={{
-                  borderRadius: 14,
-                  width: 44,
-                  height: 44,
-                  bgcolor: alpha(theme.palette.primary.main, 0.12),
-                  '&:hover': {
-                    bgcolor: alpha(theme.palette.primary.main, 0.2),
-                  },
-                }}
-              >
-                <SettingsOutlinedIcon sx={{ fontSize: 24 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Typography variant="caption" color="text.secondary">
-            数据
-          </Typography>
-        </Box>
-      </Sidebar>
-      <StyledMain sx={{ marginLeft: '72px' }}>
-        <Box sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-          {children}
-        </Box>
-      </StyledMain>
-      <LocalDataManagerDialog open={dataManagerOpen} onClose={() => setDataManagerOpen(false)} />
-    </>
+    <StatusBarProvider>
+      <>
+        <Sidebar>
+          <Avatar
+            sx={{
+              width: 48,
+              height: 48,
+              borderRadius: '22%',
+              backgroundColor: alpha(theme.palette.primary.main, 0.16),
+              color: theme.palette.primary.main,
+              fontWeight: 700,
+              fontSize: 20,
+            }}
+          >
+            B
+          </Avatar>
+          <Stack spacing={1.5} sx={{ flexGrow: 1, alignItems: 'center' }}>
+            {tabs.map(tab => {
+              const Icon = tab.icon;
+              const active = currentTab === tab.value;
+              return (
+                <Tooltip key={tab.value} title={tab.label} placement="right">
+                  <Link to={tab.value} style={{ textDecoration: 'none' }}>
+                    <NavIconButton
+                      active={active}
+                      size="large"
+                    >
+                      <Icon sx={{ fontSize: 26 }} />
+                    </NavIconButton>
+                  </Link>
+                </Tooltip>
+              );
+            })}
+          </Stack>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+            <Tooltip title="本地数据管理" placement="right">
+              <span>
+                <IconButton
+                  size="large"
+                  color="primary"
+                  onClick={() => setDataManagerOpen(true)}
+                  sx={{
+                    borderRadius: 14,
+                    width: 44,
+                    height: 44,
+                    bgcolor: alpha(theme.palette.primary.main, 0.12),
+                    '&:hover': {
+                      bgcolor: alpha(theme.palette.primary.main, 0.2),
+                    },
+                  }}
+                >
+                  <SettingsOutlinedIcon sx={{ fontSize: 24 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Typography variant="caption" color="text.secondary">
+              数据
+            </Typography>
+          </Box>
+        </Sidebar>
+        <StyledMain sx={{ marginLeft: '72px' }}>
+          <Box sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+            {children}
+          </Box>
+        </StyledMain>
+        <LocalDataManagerDialog open={dataManagerOpen} onClose={() => setDataManagerOpen(false)} />
+      </>
+    </StatusBarProvider>
   );
 };
 

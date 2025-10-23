@@ -1,11 +1,11 @@
 [package]
-name = "blink"
+name = "Kk"
 version = "1.0.0-alpha.3"
 description = "A Modern Jellyfin Client"
-authors = ["prayag17", "Blink contributors (https://github.com/prayag17/Blink/graphs/contributors)"]
+authors = ["prayag17", "Kk contributors (https://github.com/prayag17/Kk/graphs/contributors)"]
 license = "GPL-3.0-only"
-repository = "https://github.com/prayag17/Blink/"
-default-run = "blink"
+repository = "https://github.com/prayag17/Kk/"
+default-run = "Kk"
 edition = "2021"
 rust-version = "1.59"
 

@@ -522,7 +522,7 @@ const LocalDataManagerDialog: React.FC<LocalDataManagerDialogProps> = ({
         const { dialog, fs } = await ensureTauriModules();
         const selected = await dialog.open({
           multiple: false,
-          filters: [{ name: 'Blink 数据备份', extensions: ['json'] }],
+          filters: [{ name: 'Kk 数据备份', extensions: ['json'] }],
         });
         if (!selected) {
           return;
@@ -591,15 +591,15 @@ const LocalDataManagerDialog: React.FC<LocalDataManagerDialogProps> = ({
 
       const json = JSON.stringify(payload, null, 2);
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileName = `blink-backup-${timestamp}.json`;
+      const fileName = `Kk-backup-${timestamp}.json`;
       const storageCount = Object.keys(snapshot).length;
       const speechCount = speechSessionsBackup?.length ?? 0;
 
       if (isTauriEnvironment()) {
         const { dialog, fs } = await ensureTauriModules();
         const filePath = await dialog.save({
-          title: '保存 Blink 数据备份',
-          filters: [{ name: 'Blink 数据备份', extensions: ['json'] }],
+          title: '保存 Kk 数据备份',
+          filters: [{ name: 'Kk 数据备份', extensions: ['json'] }],
           defaultPath: fileName,
         });
         if (!filePath) {
@@ -633,7 +633,7 @@ const LocalDataManagerDialog: React.FC<LocalDataManagerDialogProps> = ({
               suggestedName: fileName,
               types: [
                 {
-                  description: 'Blink 数据备份',
+                  description: 'Kk 数据备份',
                   accept: { 'application/json': ['.json'] },
                 },
               ],

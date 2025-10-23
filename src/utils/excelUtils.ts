@@ -2253,8 +2253,8 @@ const createWorkbookFromOriginal = (
   const firstWithOriginal = selectedSheets.find(sheet => sheet.originalWorkbook && canUseOriginalWorkbook(sheet.originalWorkbook));
   if (firstWithOriginal && firstWithOriginal.originalWorkbook) {
     const baseWorkbook = firstWithOriginal.originalWorkbook as ExcelJS.Workbook;
-    newWorkbook.creator = baseWorkbook.creator || 'Blink Excel Processor';
-    newWorkbook.lastModifiedBy = baseWorkbook.lastModifiedBy || 'Blink Excel Processor';
+    newWorkbook.creator = baseWorkbook.creator || 'Kk Excel Processor';
+    newWorkbook.lastModifiedBy = baseWorkbook.lastModifiedBy || 'Kk Excel Processor';
     newWorkbook.created = baseWorkbook.created || new Date();
     newWorkbook.modified = baseWorkbook.modified || new Date();
     newWorkbook.company = baseWorkbook.company;
@@ -2264,8 +2264,8 @@ const createWorkbookFromOriginal = (
     newWorkbook.description = baseWorkbook.description;
     newWorkbook.category = baseWorkbook.category;
   } else {
-    newWorkbook.creator = 'Blink Excel Processor';
-    newWorkbook.lastModifiedBy = 'Blink Excel Processor';
+    newWorkbook.creator = 'Kk Excel Processor';
+    newWorkbook.lastModifiedBy = 'Kk Excel Processor';
     newWorkbook.created = new Date();
     newWorkbook.modified = new Date();
   }
@@ -2590,8 +2590,8 @@ export const exportToExcel = async (
       workbook = new ExcelJS.Workbook();
       
       // 设置工作簿属性
-      workbook.creator = 'Blink Excel Processor';
-      workbook.lastModifiedBy = 'Blink Excel Processor';
+      workbook.creator = 'Kk Excel Processor';
+      workbook.lastModifiedBy = 'Kk Excel Processor';
       workbook.created = new Date();
       workbook.modified = new Date();
       
@@ -2643,8 +2643,8 @@ const exportSingleSheetTauri = async (
   const workbook = new ExcelJS.Workbook();
   
   // 设置工作簿属性
-  workbook.creator = 'Blink Excel Processor';
-  workbook.lastModifiedBy = 'Blink Excel Processor';
+  workbook.creator = 'Kk Excel Processor';
+  workbook.lastModifiedBy = 'Kk Excel Processor';
   workbook.created = new Date();
   workbook.modified = new Date();
   
@@ -2684,8 +2684,8 @@ const exportToExcelBrowser = async (
   const workbook = new ExcelJS.Workbook();
   
   // 设置工作簿属性
-  workbook.creator = 'Blink Excel Processor';
-  workbook.lastModifiedBy = 'Blink Excel Processor';
+  workbook.creator = 'Kk Excel Processor';
+  workbook.lastModifiedBy = 'Kk Excel Processor';
   workbook.created = new Date();
   workbook.modified = new Date();
   

@@ -47,13 +47,13 @@
 	"resources": [
 		"resources/models/ggml-small.bin"
 	],
-		"shortDescription": "Blink",
+		"shortDescription": "Kk",
 		"targets": ["deb", "appimage", "nsis", "app", "dmg"],
 		"licenseFile": "../LICENSE"
 	},
-	"productName": "Blink",
+	"productName": "Kk",
 	"version": "../package.json",
-	"identifier": "com.blink.prayag17",
+	"identifier": "com.Kk.prayag17",
 	"plugins": {
 		"notification": null
 	},
@@ -64,7 +64,7 @@
 				"height": 768,
 				"width": 1125,
 				"resizable": true,
-				"title": "Blink",
+				"title": "Kk",
 				"visible": true,
 				"center": true,
 				"label": "main",

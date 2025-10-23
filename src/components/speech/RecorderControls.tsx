@@ -264,8 +264,8 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
                 <FiberManualRecordIcon 
                   sx={{ 
                     color: '#ed6c02',
-                    animation: 'blink 1.5s ease-in-out infinite',
-                    '@keyframes blink': {
+                    animation: 'Kk 1.5s ease-in-out infinite',
+                    '@keyframes Kk': {
                       '0%, 100%': { opacity: 1 },
                       '50%': { opacity: 0.3 },
                     },

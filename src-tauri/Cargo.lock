@@ -3,6 +3,38 @@
 version = 3
 
 [[package]]
+name = "Kk"
+version = "1.0.0-alpha.3"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "futures-util",
+ "hound",
+ "log",
+ "num_cpus",
+ "portpicker",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-localhost",
+ "tauri-plugin-log",
+ "tauri-plugin-notification",
+ "tauri-plugin-process",
+ "tauri-plugin-store",
+ "tauri-plugin-upload",
+ "tauri-plugin-window-state",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+ "whisper-rs",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -381,38 +413,6 @@ dependencies = [
  "radium",
  "tap",
  "wyz",
-]
-
-[[package]]
-name = "blink"
-version = "1.0.0-alpha.3"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "futures-util",
- "hound",
- "log",
- "num_cpus",
- "portpicker",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-localhost",
- "tauri-plugin-log",
- "tauri-plugin-notification",
- "tauri-plugin-process",
- "tauri-plugin-store",
- "tauri-plugin-upload",
- "tauri-plugin-window-state",
- "thiserror 1.0.69",
- "tokio",
- "uuid",
- "whisper-rs",
 ]
 
 [[package]]

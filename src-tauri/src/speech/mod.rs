@@ -371,16 +371,45 @@ impl SpeechManager {
     }
 
     fn try_copy_bundled_model(&self, app: &AppHandle) -> Result<bool, SpeechError> {
-        let resource_dir = match app.path().resource_dir() {
-            Ok(path) => path,
-            Err(_) => return Ok(false),
-        };
-        let bundled_path = resource_dir.join(BUNDLED_MODEL_RELATIVE_PATH);
-        if !bundled_path.exists() {
-            return Ok(false);
+        let mut candidate_files: Vec<PathBuf> = Vec::new();
+
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            let search_dirs = [
+                resource_dir.clone(),
+                resource_dir.join("resources"),
+                resource_dir.join("Resources"),
+                resource_dir.join("../resources"),
+                resource_dir.join("../Resources"),
+            ];
+
+            for dir in search_dirs {
+                candidate_files.push(dir.join(BUNDLED_MODEL_RELATIVE_PATH));
+            }
         }
-        fs::copy(&bundled_path, &self.model_path)?;
-        Ok(true)
+
+        if let Some(manifest_dir) = option_env!("CARGO_MANIFEST_DIR") {
+            candidate_files.push(
+                Path::new(manifest_dir)
+                    .join("resources")
+                    .join(BUNDLED_MODEL_RELATIVE_PATH),
+            );
+        }
+
+        candidate_files.push(Path::new("resources").join(BUNDLED_MODEL_RELATIVE_PATH));
+        candidate_files.push(
+            Path::new("src-tauri")
+                .join("resources")
+                .join(BUNDLED_MODEL_RELATIVE_PATH),
+        );
+
+        for candidate in candidate_files {
+            if candidate.exists() {
+                fs::copy(&candidate, &self.model_path)?;
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     async fn download_model(&self, app: &AppHandle) -> Result<(), SpeechError> {

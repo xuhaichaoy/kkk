@@ -8,6 +8,7 @@ import RecorderControls from '../components/speech/RecorderControls';
 import TranscriptView from '../components/speech/TranscriptView';
 import SessionHistory from '../components/speech/SessionHistory';
 import { PageHeader, CardContainer } from '../components/common';
+import { useStatusBar } from '../components/common/StatusBar';
 import { blobTo16kWavBase64 } from '../utils/audioUtils';
 import type {
   ModelDownloadProgress,
@@ -54,6 +55,7 @@ const SpeechToTextPage: React.FC = () => {
   const transcriptionStartRef = React.useRef<number | null>(null);
   const transcriptionRafRef = React.useRef<number | null>(null);
   const transcriptionCancelledRef = React.useRef(false);
+  const { setStatus, resetStatus } = useStatusBar();
 
   const stopMonitoring = React.useCallback(() => {
     if (rafRef.current !== null) {
@@ -262,6 +264,71 @@ const SpeechToTextPage: React.FC = () => {
   }, [applySession]);
 
   const isMountedRef = React.useRef(true);
+
+  React.useEffect(() => {
+    let timeout: number | undefined;
+
+    if (error) {
+      setStatus(() => ({
+        message: error,
+        severity: 'error',
+      }));
+    } else if (modelProgress) {
+      const total = modelProgress.total_bytes ?? 0;
+      const percent =
+        total > 0 ? Math.min(100, Math.round((modelProgress.downloaded_bytes / total) * 100)) : null;
+      const downloadedMb = modelProgress.downloaded_bytes / (1024 * 1024);
+      setStatus(() => ({
+        message: '正在下载语音模型',
+        detail:
+          percent !== null
+            ? `下载进度 ${percent}%`
+            : `已下载 ${downloadedMb.toFixed(1)} MB`,
+        severity: 'info',
+        progress: percent ?? null,
+      }));
+    } else if (ensuringModel && !modelReady) {
+      setStatus(() => ({
+        message: '正在检查语音模型',
+        severity: 'info',
+      }));
+    } else if (transcribing) {
+      setStatus(() => ({
+        message: '正在转写录音',
+        severity: 'info',
+      }));
+    } else if (isRecording) {
+      setStatus(() => ({
+        message: '正在录音',
+        severity: 'info',
+      }));
+    } else if (modelReady) {
+      setStatus(() => ({
+        message: '语音模型已就绪',
+        severity: 'success',
+      }));
+      timeout = window.setTimeout(() => {
+        resetStatus();
+      }, 3200);
+    } else {
+      resetStatus();
+    }
+
+    return () => {
+      if (timeout) {
+        window.clearTimeout(timeout);
+      }
+    };
+  }, [
+    ensuringModel,
+    error,
+    isRecording,
+    modelProgress,
+    modelReady,
+    resetStatus,
+    setStatus,
+    transcribing,
+  ]);
 
   const ensureModel = React.useCallback(async () => {
     setEnsuringModel(true);
