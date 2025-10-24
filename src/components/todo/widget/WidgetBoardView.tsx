@@ -1,6 +1,6 @@
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import LaunchIcon from "@mui/icons-material/Launch";
-import SnoozeIcon from "@mui/icons-material/Snooze";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import {
 	Box,
 	Button,
@@ -10,7 +10,6 @@ import {
 	IconButton,
 	Paper,
 	Stack,
-	TextField,
 	ToggleButton,
 	ToggleButtonGroup,
 	Tooltip,
@@ -25,84 +24,32 @@ import {
 } from "./utils";
 
 interface WidgetBoardViewProps {
-	inputValue: string;
-	onInputChange: (value: string) => void;
-	onSubmit: () => void;
 	boardScope: "today" | "week";
 	onBoardScopeChange: (scope: "today" | "week") => void;
 	sections: Array<{ key: string; title: string; tasks: TodoTask[] }>;
 	taskCount: number;
 	hasTasks: boolean;
 	onToggleTask: (task: TodoTask, completed: boolean) => void;
+	onPostponeTomorrow: (task: TodoTask) => void;
 	onOpenPostponeMenu: (taskId: string, anchor: HTMLElement) => void;
 	onOpenTimeLog: (task: TodoTask) => void;
 	onOpenTaskDetails: (task: TodoTask) => void;
 }
 
 const WidgetBoardView: FC<WidgetBoardViewProps> = ({
-	inputValue,
-	onInputChange,
-	onSubmit,
 	boardScope,
 	onBoardScopeChange,
 	sections,
 	taskCount,
 	hasTasks,
 	onToggleTask,
+	onPostponeTomorrow,
 	onOpenPostponeMenu,
 	onOpenTimeLog,
 	onOpenTaskDetails,
 }) => {
 	return (
 		<Stack spacing={2} sx={{ flex: 1, overflow: "hidden" }}>
-			<Stack spacing={1}>
-				<Stack direction="row" spacing={1.5}>
-					<TextField
-						value={inputValue}
-						onChange={(event) => onInputChange(event.target.value)}
-						placeholder="快速记录任务"
-						size="small"
-						fullWidth
-						sx={{
-							"& .MuiOutlinedInput-root": {
-								borderRadius: 2,
-								background: "rgba(255, 255, 255, 0.8)",
-								backdropFilter: "blur(10px)",
-								"&:hover": {
-									background: "rgba(255, 255, 255, 0.9)",
-								},
-								"&.Mui-focused": {
-									background: "rgba(255, 255, 255, 0.95)",
-								},
-							},
-						}}
-						onKeyDown={(event) => {
-							if (event.key === "Enter") {
-								event.preventDefault();
-								onSubmit();
-							}
-						}}
-					/>
-					<Button
-						variant="contained"
-						size="small"
-						onClick={onSubmit}
-						sx={{
-							borderRadius: 2,
-							background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-							"&:hover": {
-								background: "linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)",
-							},
-							px: 2,
-						}}
-					>
-						添加
-					</Button>
-				</Stack>
-				<Typography variant="caption" color="text.secondary">
-					支持输入「标题 @标签 #分类 !优先级」快捷语法
-				</Typography>
-			</Stack>
 			<Stack direction="row" alignItems="center" justifyContent="space-between">
 				<ToggleButtonGroup
 					value={boardScope}
@@ -128,7 +75,7 @@ const WidgetBoardView: FC<WidgetBoardViewProps> = ({
 					background: "rgba(255, 255, 255, 0.6)",
 					backdropFilter: "blur(10px)",
 					p: 1.5,
-				}}
+			}}
 			>
 				{hasTasks ? (
 					<Stack spacing={2}>
@@ -168,9 +115,14 @@ const WidgetBoardView: FC<WidgetBoardViewProps> = ({
 													background: "rgba(255, 255, 255, 0.9)",
 													cursor: "pointer",
 													transition: "transform 0.2s ease, box-shadow 0.2s ease",
+													position: "relative",
 													"&:hover": {
 														transform: "translateY(-2px)",
 														boxShadow: "0 12px 24px rgba(102, 126, 234, 0.18)",
+													},
+													"&:hover .task-actions": {
+														opacity: 1,
+														pointerEvents: "auto",
 													},
 												}}
 											>
@@ -222,47 +174,67 @@ const WidgetBoardView: FC<WidgetBoardViewProps> = ({
 														</Typography>
 													</Stack>
 												</Stack>
-												<Stack direction="row" spacing={0.5} alignItems="center">
-													<Tooltip title="推迟">
+												<Stack
+													direction="row"
+													spacing={0.75}
+													alignItems="center"
+													className="task-actions"
+													sx={{
+														opacity: 0,
+														pointerEvents: "none",
+														transition: "opacity 0.2s ease",
+													}}
+												>
+													<Button
+														variant="outlined"
+														size="small"
+														onClick={(event) => {
+															event.stopPropagation();
+															onPostponeTomorrow(task);
+														}}
+													>
+														推迟到明天
+													</Button>
+													<Button
+														variant="outlined"
+														size="small"
+														onClick={(event) => {
+															event.stopPropagation();
+															onOpenTimeLog(task);
+														}}
+														startIcon={<AccessTimeIcon fontSize="small" />}
+													>
+														登记用时
+													</Button>
+													<Button
+														variant="outlined"
+														size="small"
+														onClick={(event) => {
+															event.stopPropagation();
+															onOpenTaskDetails(task);
+														}}
+														startIcon={<LaunchIcon fontSize="small" />}
+													>
+														详情
+													</Button>
+													<Tooltip title="更多推迟选项">
 														<IconButton
 															size="small"
 															onClick={(event) => {
 																event.stopPropagation();
 																onOpenPostponeMenu(task.id, event.currentTarget);
-															}}
+														}}
 														>
-															<SnoozeIcon fontSize="small" />
+															<MoreHorizIcon fontSize="small" />
 														</IconButton>
-													</Tooltip>
-													<Tooltip title="登记用时">
-														<IconButton
-															size="small"
-															onClick={(event) => {
-																event.stopPropagation();
-																onOpenTimeLog(task);
-															}}
-														>
-															<AccessTimeIcon fontSize="small" />
-														</IconButton>
-													</Tooltip>
-													<Tooltip title="打开详情">
-														<IconButton
-															size="small"
-															onClick={(event) => {
-																event.stopPropagation();
-																onOpenTaskDetails(task);
-															}}
-														>
-															<LaunchIcon fontSize="small" />
-														</IconButton>
-													</Tooltip>
+														</Tooltip>
 												</Stack>
 											</Paper>
 										);
 									})}
 								</Stack>
 							</Stack>
-						))}
+					))}
 					</Stack>
 				) : (
 					<Stack alignItems="center" justifyContent="center" sx={{ py: 6 }}>

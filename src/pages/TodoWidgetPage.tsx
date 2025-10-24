@@ -1,17 +1,21 @@
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import AlarmIcon from "@mui/icons-material/Alarm";
 import CloseIcon from "@mui/icons-material/Close";
 import NoteAltIcon from "@mui/icons-material/NoteAlt";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import StickyNote2Icon from "@mui/icons-material/StickyNote2";
 import ViewKanbanIcon from "@mui/icons-material/ViewKanban";
 import {
 	Box,
+	Button,
 	IconButton,
 	Menu,
 	MenuItem,
 	Paper,
 	Stack,
+	TextField,
 	ToggleButton,
 	ToggleButtonGroup,
 	Tooltip,
@@ -21,7 +25,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useAtomValue, useSetAtom } from "jotai";
 import type { FC } from "react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { isThisWeek, isToday } from "date-fns";
+import { isThisWeek, isToday, startOfToday } from "date-fns";
 import TodoFormDialog from "../components/todo/TodoFormDialog";
 import TodoTimeLogDialog from "../components/todo/TodoTimeLogDialog";
 import WidgetBoardView from "../components/todo/widget/WidgetBoardView";
@@ -284,6 +288,63 @@ const TodoWidgetPage: FC = () => {
 
 	const todoMap = useMemo(() => new Map(todos.map((task) => [task.id, task])), [todos]);
 
+	const todayBase = useMemo(() => startOfToday(), []);
+
+	const todayTasks = useMemo(
+		() => getTodayTodos(todos, todayBase),
+		[todos, todayBase],
+	);
+
+	const overviewCounts = useMemo(() => {
+		const ids = new Set<string>();
+		boardTaskGroups.overdue.forEach((task) => ids.add(task.id));
+		boardTaskGroups.today.forEach((task) => ids.add(task.id));
+		todayTasks.forEach((task) => ids.add(task.id));
+		let completed = 0;
+		ids.forEach((id) => {
+			const task = todoMap.get(id);
+			if (task?.completed) {
+				completed += 1;
+			}
+		});
+		return {
+			completed,
+			total: ids.size,
+		};
+	}, [boardTaskGroups.overdue, boardTaskGroups.today, todayTasks, todoMap]);
+
+	const todayLoggedMinutes = useMemo(() => {
+		return todos.reduce((sum, task) => {
+			if (!task.timeEntries) return sum;
+			const entrySum = task.timeEntries.reduce((entryTotal, entry) => {
+				const date = entry.date ? new Date(entry.date) : null;
+				if (!date || !isToday(date)) return entryTotal;
+				return entryTotal + (Number(entry.durationMinutes) || 0);
+			}, 0);
+			return sum + entrySum;
+		}, 0);
+	}, [todos]);
+
+	const formatDuration = useCallback((minutes: number) => {
+		if (minutes <= 0) return "0h";
+		if (minutes < 60) return `${minutes}min`;
+		const hours = minutes / 60;
+		return hours % 1 === 0 ? `${Math.round(hours)}h` : `${hours.toFixed(1)}h`;
+	}, []);
+
+	const pendingReminderCount = useMemo(
+		() => reminderLog.filter((entry) => !entry.completed).length,
+		[reminderLog],
+	);
+
+	const primaryTask = useMemo(() => {
+		for (const section of boardSections) {
+			const candidate = section.tasks.find((task) => !task.completed);
+			if (candidate) return candidate;
+		}
+		return null;
+	}, [boardSections]);
+
 	useEffect(() => {
 		let isMounted = true;
 		currentWindow
@@ -523,15 +584,33 @@ const TodoWidgetPage: FC = () => {
 		[handleEditTask, todoMap],
 	);
 
-	const handleOpenTimeLog = useCallback((task: TodoTask) => {
-		setTimeLogTaskId(task.id);
-		setTimeLogOpen(true);
-	}, []);
+const handleOpenTimeLog = useCallback((task: TodoTask) => {
+	setTimeLogTaskId(task.id);
+	setTimeLogOpen(true);
+}, []);
 
-	const handleCloseTimeLog = useCallback(() => {
-		setTimeLogOpen(false);
-		setTimeLogTaskId(null);
-	}, []);
+const handleCloseTimeLog = useCallback(() => {
+	setTimeLogOpen(false);
+	setTimeLogTaskId(null);
+}, []);
+
+const handleStartFocus = useCallback(() => {
+	if (!primaryTask) return;
+	if (primaryTask.status !== "inProgress") {
+		updateTodo({
+			id: primaryTask.id,
+			changes: {
+				status: "inProgress",
+			},
+		});
+	}
+	handleEditTask(primaryTask);
+}, [handleEditTask, primaryTask, updateTodo]);
+
+const handleQuickLog = useCallback(() => {
+	if (!primaryTask) return;
+	handleOpenTimeLog(primaryTask);
+}, [handleOpenTimeLog, primaryTask]);
 
 	const handleSubmitTimeEntry = useCallback(
 		(payload: {
@@ -583,11 +662,18 @@ const TodoWidgetPage: FC = () => {
 		);
 	};
 
-	const deleteNote = (id: string) => {
-		setNotes((prev) => prev.filter((note) => note.id !== id));
-	};
+const deleteNote = (id: string) => {
+	setNotes((prev) => prev.filter((note) => note.id !== id));
+};
 
-	const handleTestNotification = useCallback(async () => {
+const handlePostponeTomorrow = useCallback(
+	(task: TodoTask) => {
+		handlePostponeTask(task.id, 24 * 60);
+	},
+	[handlePostponeTask],
+);
+
+const handleTestNotification = useCallback(async () => {
 		try {
 			console.log("Checking notification permission in widget...");
 			const granted = await isPermissionGranted();
@@ -759,7 +845,44 @@ const TodoWidgetPage: FC = () => {
 				</Stack>
 			</Stack>
 
-			<Stack spacing={2} sx={{ p: 2.5, pt: 2, flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}>
+			<Stack direction="row" spacing={2} sx={{ px: 2.5, pt: 1.5, pb: 1, position: "relative", zIndex: 1 }}>
+				{[
+					{
+						label: "今日已完成",
+						value: `${overviewCounts.completed}/${overviewCounts.total || 0}`,
+					},
+					{
+						label: "累计用时",
+						value: formatDuration(todayLoggedMinutes),
+					},
+					{
+						label: "提醒",
+						value: `${pendingReminderCount} 条`,
+					},
+				].map((item) => (
+					<Box
+						key={item.label}
+						sx={{
+							flex: 1,
+							px: 2,
+							py: 1.25,
+							borderRadius: 2,
+							background: "linear-gradient(135deg, rgba(102,126,234,0.15) 0%, rgba(118,75,162,0.15) 100%)",
+							border: "1px solid rgba(102, 126, 234, 0.2)",
+							backdropFilter: "blur(12px)",
+						}}
+					>
+						<Typography variant="caption" color="text.secondary">
+							{item.label}
+						</Typography>
+						<Typography variant="subtitle1" fontWeight={700}>
+							{item.value}
+						</Typography>
+					</Box>
+				))}
+			</Stack>
+
+			<Stack spacing={2} sx={{ px: 2.5, pb: 2, flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}>
 				<ToggleButtonGroup
 					value={viewMode}
 					exclusive
@@ -778,7 +901,7 @@ const TodoWidgetPage: FC = () => {
 						border: "1px solid rgba(102, 126, 234, 0.2)",
 					}}
 				>
-					<ToggleButton 
+					<ToggleButton
 						value="board"
 						sx={{
 							borderRadius: 1.5,
@@ -794,43 +917,12 @@ const TodoWidgetPage: FC = () => {
 							},
 						}}
 					>
-						<Stack
-							direction="row"
-							spacing={0.5}
-							alignItems="center"
-							justifyContent="center"
-						>
+						<Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
 							<ViewKanbanIcon fontSize="small" />
-							<Typography variant="caption">看板</Typography>
+							<Typography variant="caption">今日任务</Typography>
 						</Stack>
 					</ToggleButton>
-					<ToggleButton 
-						value="notes"
-						sx={{
-							borderRadius: 1.5,
-							"&.Mui-selected": {
-								background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-								color: "white",
-								"&:hover": {
-									background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-								},
-							},
-							"&:hover": {
-								background: "rgba(102, 126, 234, 0.1)",
-							},
-						}}
-					>
-						<Stack
-							direction="row"
-							spacing={0.5}
-							alignItems="center"
-							justifyContent="center"
-						>
-							<NoteAltIcon fontSize="small" />
-							<Typography variant="caption">速记</Typography>
-						</Stack>
-					</ToggleButton>
-					<ToggleButton 
+					<ToggleButton
 						value="reminders"
 						sx={{
 							borderRadius: 1.5,
@@ -846,17 +938,33 @@ const TodoWidgetPage: FC = () => {
 							},
 						}}
 					>
-						<Stack
-							direction="row"
-							spacing={0.5}
-							alignItems="center"
-							justifyContent="center"
-						>
+						<Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
 							<AlarmIcon fontSize="small" />
 							<Typography variant="caption">提醒</Typography>
 						</Stack>
 					</ToggleButton>
-					<ToggleButton 
+					<ToggleButton
+						value="notes"
+						sx={{
+							borderRadius: 1.5,
+							"&.Mui-selected": {
+								background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+								color: "white",
+								"&:hover": {
+									background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+								},
+							},
+							"&:hover": {
+								background: "rgba(102, 126, 234, 0.1)",
+							},
+						}}
+					>
+						<Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
+							<NoteAltIcon fontSize="small" />
+							<Typography variant="caption">便签</Typography>
+						</Stack>
+					</ToggleButton>
+					<ToggleButton
 						value="memo"
 						sx={{
 							borderRadius: 1.5,
@@ -872,60 +980,108 @@ const TodoWidgetPage: FC = () => {
 							},
 						}}
 					>
-						<Stack
-							direction="row"
-							spacing={0.5}
-							alignItems="center"
-							justifyContent="center"
-						>
+						<Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center">
 							<StickyNote2Icon fontSize="small" />
-							<Typography variant="caption">便签</Typography>
+							<Typography variant="caption">备忘</Typography>
 						</Stack>
 					</ToggleButton>
 				</ToggleButtonGroup>
 
-		{viewMode === "board" && (
-			<WidgetBoardView
-				inputValue={title}
-				onInputChange={setTitle}
-				onSubmit={handleAddTask}
-				boardScope={boardScope}
-				onBoardScopeChange={setBoardScope}
-				sections={boardSections}
-				taskCount={boardTaskCount}
-				hasTasks={hasBoardTasks}
-				onToggleTask={handleToggleTaskCompletion}
-				onOpenPostponeMenu={handleOpenPostponeMenu}
-				onOpenTimeLog={handleOpenTimeLog}
-				onOpenTaskDetails={handleEditTask}
-			/>
-		)}
+				<Box
+					sx={{
+						borderRadius: 2,
+						border: "1px solid rgba(102, 126, 234, 0.2)",
+						background: "rgba(255, 255, 255, 0.85)",
+						backdropFilter: "blur(10px)",
+						p: 1.5,
+					}}
+				>
+					<Stack direction="row" spacing={1.5} alignItems="center">
+						<TextField
+							value={title}
+							onChange={(event) => setTitle(event.target.value)}
+							placeholder="快速添加今日任务，支持 @标签 #分类 !优先级"
+							size="small"
+							fullWidth
+							sx={{
+								"& .MuiOutlinedInput-root": {
+									borderRadius: 2,
+									background: "rgba(255, 255, 255, 0.9)",
+									"&:hover": {
+										background: "rgba(255, 255, 255, 0.95)",
+									},
+									"&.Mui-focused": {
+										background: "rgba(255, 255, 255, 1)",
+									},
+								},
+							}}
+							onKeyDown={(event) => {
+								if (event.key === "Enter") {
+									event.preventDefault();
+									handleAddTask();
+								}
+							}}
+						/>
+						<Button
+							variant="contained"
+							onClick={handleAddTask}
+							sx={{ borderRadius: 2, px: 3, flexShrink: 0 }}
+						>
+							添加
+						</Button>
+						<Button
+							variant="outlined"
+							startIcon={<AccessTimeIcon fontSize="small" />}
+							onClick={handleQuickLog}
+							disabled={!primaryTask}
+							sx={{ flexShrink: 0 }}
+						>
+							登记用时
+						</Button>
+					</Stack>
+				</Box>
 
-		{viewMode === "notes" && (
-			<WidgetNotesView
-				draft={noteDraft}
-				onDraftChange={setNoteDraft}
-				notes={sortedNotes}
-				onAddNote={addNote}
-				onTogglePin={togglePinNote}
-				onDelete={deleteNote}
-			/>
-		)}
+				{viewMode === "board" && (
+					<WidgetBoardView
+						boardScope={boardScope}
+						onBoardScopeChange={setBoardScope}
+						sections={boardSections}
+						taskCount={boardTaskCount}
+						hasTasks={hasBoardTasks}
+						onToggleTask={handleToggleTaskCompletion}
+						onPostponeTomorrow={handlePostponeTomorrow}
+						onOpenPostponeMenu={handleOpenPostponeMenu}
+						onOpenTimeLog={handleOpenTimeLog}
+						onOpenTaskDetails={handleEditTask}
+					/>
+				)}
 
-		{viewMode === "reminders" && (
-			<WidgetRemindersView
-				entries={reminderEntries}
-				taskLookup={todoMap}
-				onOpenTask={handleOpenReminderDetails}
-				onSnooze={handleSnoozeReminderEntry}
-				onComplete={handleCompleteReminderEntry}
-			/>
-		)}
+				{viewMode === "reminders" && (
+					<WidgetRemindersView
+						entries={reminderEntries}
+						taskLookup={todoMap}
+						onOpenTask={handleOpenReminderDetails}
+						onSnooze={handleSnoozeReminderEntry}
+						onComplete={handleCompleteReminderEntry}
+					/>
+				)}
 
-		{viewMode === "memo" && (
-			<WidgetMemoView value={memoText} onChange={setMemoText} />
-		)}
-	</Stack>
+				{viewMode === "notes" && (
+					<WidgetNotesView
+						draft={noteDraft}
+						onDraftChange={setNoteDraft}
+						notes={sortedNotes}
+						onAddNote={addNote}
+						onTogglePin={togglePinNote}
+						onDelete={deleteNote}
+					/>
+				)}
+
+				{viewMode === "memo" && (
+					<WidgetMemoView value={memoText} onChange={setMemoText} />
+				)}
+			</Stack>
+
 
 	<Menu
 		anchorEl={postponeMenu?.anchor ?? null}
