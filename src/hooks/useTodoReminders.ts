@@ -11,6 +11,7 @@ import {
 } from '../utils/notificationUtils';
 import { debugError, debugLog } from '../utils/logger';
 import { extractTextFromHtml } from '../utils/richTextUtils';
+import { appendReminderLogAtom } from '../stores/todoReminderStore';
 
 const REMINDER_GRACE_WINDOW_MINUTES = 10;
 
@@ -27,6 +28,7 @@ const shouldTriggerReminder = (task: TodoTask, now: Date): boolean => {
 export const useTodoReminders = () => {
   const todos = useAtomValue(todosAtom);
   const updateTodo = useSetAtom(updateTodoAtom);
+  const appendReminderLog = useSetAtom(appendReminderLogAtom);
   const tasksRef = useRef<TodoTask[]>(todos);
 
   useEffect(() => {
@@ -68,6 +70,13 @@ export const useTodoReminders = () => {
             body: notificationBody,
           });
           debugLog('Notification sent successfully for task:', task.title);
+
+          appendReminderLog({
+            taskId: task.id,
+            taskTitle: task.title,
+            reminderAt: task.reminder,
+            sentAt: new Date().toISOString(),
+          });
         } catch (error) {
           debugError('Failed to send reminder notification for task:', task.title, error);
         }
@@ -85,5 +94,5 @@ export const useTodoReminders = () => {
       active = false;
       clearInterval(interval);
     };
-  }, [updateTodo]);
+  }, [appendReminderLog, updateTodo]);
 };

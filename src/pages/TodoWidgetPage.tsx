@@ -1,6 +1,5 @@
 import AlarmIcon from "@mui/icons-material/Alarm";
 import CloseIcon from "@mui/icons-material/Close";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import NoteAltIcon from "@mui/icons-material/NoteAlt";
 import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
@@ -8,15 +7,11 @@ import StickyNote2Icon from "@mui/icons-material/StickyNote2";
 import ViewKanbanIcon from "@mui/icons-material/ViewKanban";
 import {
 	Box,
-	Button,
-	Checkbox,
 	IconButton,
-	List,
-	ListItem,
-	ListItemText,
+	Menu,
+	MenuItem,
 	Paper,
 	Stack,
-	TextField,
 	ToggleButton,
 	ToggleButtonGroup,
 	Tooltip,
@@ -26,45 +21,124 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useAtomValue, useSetAtom } from "jotai";
 import type { FC } from "react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import TodoKanbanBoard from "../components/todo/TodoKanbanBoard";
+import { isThisWeek, isToday } from "date-fns";
 import TodoFormDialog from "../components/todo/TodoFormDialog";
 import TodoTimeLogDialog from "../components/todo/TodoTimeLogDialog";
+import WidgetBoardView from "../components/todo/widget/WidgetBoardView";
+import WidgetMemoView from "../components/todo/widget/WidgetMemoView";
+import WidgetNotesView from "../components/todo/widget/WidgetNotesView";
+import WidgetRemindersView from "../components/todo/widget/WidgetRemindersView";
+import {
+	QuickNote,
+	createNoteId,
+} from "../components/todo/widget/utils";
 import { useTodoReminders } from "../hooks/useTodoReminders";
 import { sendNotification, isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
-import type { TodoStatus, TodoTask } from "../stores/todoStore";
+import type { TodoPriority, TodoStatus, TodoTask } from "../stores/todoStore";
 import {
 	addTodoAtom,
 	removeTimeEntryAtom,
+	upsertCategoryAtom,
 	todosAtom,
 	updateTodoAtom,
+	upsertTagAtom,
 	upsertTimeEntryAtom,
 } from "../stores/todoStore";
-import { getNextHalfHourIsoString } from "../utils/todoUtils";
-
-type QuickNote = {
-	id: string;
-	text: string;
-	createdAt: string;
-	pinned?: boolean;
-};
-
-type Reminder = {
-	id: string;
-	text: string;
-	time?: string;
-	done: boolean;
-};
+import {
+	reminderLogAtom,
+	updateReminderLogAtom,
+	type TodoReminderLogEntry,
+} from "../stores/todoReminderStore";
+import {
+	getNextHalfHourIsoString,
+	getOverdueTodos,
+	getTodayTodos,
+	getWeekTodos,
+	sortTasks,
+} from "../utils/todoUtils";
 
 const VIEW_MODE_KEY = "todo_widget_view_mode_v1";
 const NOTES_KEY = "todo_widget_notes_v1";
-const REMINDERS_KEY = "todo_widget_reminders_v1";
 const MEMO_KEY = "todo_widget_memo_v1";
 
-const createId = () => {
-	if (typeof crypto !== "undefined" && crypto.randomUUID) {
-		return crypto.randomUUID();
-	}
-	return Math.random().toString(36).slice(2, 10);
+const PRIORITY_ALIASES: Record<string, TodoPriority> = {
+	high: "high",
+	h: "high",
+	urgent: "high",
+	"1": "high",
+	"高": "high",
+	"高优先": "high",
+	"緊急": "high",
+	"紧急": "high",
+	"重要": "high",
+	medium: "medium",
+	m: "medium",
+	"2": "medium",
+	"中": "medium",
+	"中优先": "medium",
+	low: "low",
+	l: "low",
+	"3": "low",
+	"低": "low",
+	"低优先": "low",
+};
+
+const POSTPONE_OPTIONS: Array<{ label: string; minutes: number }> = [
+	{ label: "推迟 5 分钟", minutes: 5 },
+	{ label: "推迟 15 分钟", minutes: 15 },
+	{ label: "推迟 30 分钟", minutes: 30 },
+	{ label: "推迟到明天", minutes: 24 * 60 },
+];
+
+const parseQuickTaskInput = (input: string): {
+	title: string;
+	tags: string[];
+	category?: string;
+	priority: TodoPriority;
+} => {
+	const normalizedInput = input
+		.replace(/＠/g, "@")
+		.replace(/＃/g, "#")
+		.replace(/！/g, "!");
+	const tokens = normalizedInput.trim().split(/\s+/);
+	const tags: string[] = [];
+	let category: string | undefined;
+	let priority: TodoPriority = "none";
+	const titleParts: string[] = [];
+
+	tokens.forEach((token) => {
+		if (!token) return;
+		if (token.startsWith("@") && token.length > 1) {
+			const tag = token.slice(1);
+			if (tag && !tags.includes(tag)) {
+				tags.push(tag);
+			}
+			return;
+		}
+		if (token.startsWith("#") && token.length > 1) {
+			category = token.slice(1);
+			return;
+		}
+		if (token.startsWith("!") && token.length > 1) {
+			const normalized = token.slice(1).toLowerCase();
+			const mapped = PRIORITY_ALIASES[normalized];
+			if (mapped) {
+				priority = mapped;
+			} else if (PRIORITY_ALIASES[token.slice(1)]) {
+				priority = PRIORITY_ALIASES[token.slice(1)];
+			}
+			return;
+		}
+		titleParts.push(token);
+	});
+
+	const title = titleParts.join(" ").trim();
+	return {
+		title: title || input.trim(),
+		tags,
+		category,
+		priority,
+	};
 };
 
 const TodoWidgetPage: FC = () => {
@@ -73,12 +147,20 @@ const TodoWidgetPage: FC = () => {
 	const updateTodo = useSetAtom(updateTodoAtom);
 	const upsertTimeEntry = useSetAtom(upsertTimeEntryAtom);
 	const removeTimeEntry = useSetAtom(removeTimeEntryAtom);
-	
+	const reminderLog = useAtomValue(reminderLogAtom);
+	const updateReminderLog = useSetAtom(updateReminderLogAtom);
+	const upsertTag = useSetAtom(upsertTagAtom);
+	const upsertCategory = useSetAtom(upsertCategoryAtom);
+
 	// 启用任务提醒功能
 	useTodoReminders();
 	const [title, setTitle] = useState("");
 	const [isPinned, setIsPinned] = useState(true);
 	const currentWindow = useMemo(() => getCurrentWebviewWindow(), []);
+	const [boardScope, setBoardScope] = useState<"today" | "week">("today");
+	const [postponeMenu, setPostponeMenu] = useState<
+		{ taskId: string; anchor: HTMLElement } | null
+	>(null);
 	const [viewMode, setViewMode] = useState<
 		"board" | "notes" | "reminders" | "memo"
 	>(() => {
@@ -89,9 +171,7 @@ const TodoWidgetPage: FC = () => {
 			: "board";
 	});
 	const [notes, setNotes] = useState<QuickNote[]>([]);
-	const [reminders, setReminders] = useState<Reminder[]>([]);
 	const [memoText, setMemoText] = useState("");
-	const [reminderDraft, setReminderDraft] = useState({ text: "", time: "" });
 	const [noteDraft, setNoteDraft] = useState("");
 	const [editingTask, setEditingTask] = useState<TodoTask | null>(null);
 	const [timeLogOpen, setTimeLogOpen] = useState(false);
@@ -100,6 +180,109 @@ const TodoWidgetPage: FC = () => {
 		if (!timeLogTaskId) return null;
 		return todos.find((item) => item.id === timeLogTaskId) ?? null;
 	}, [timeLogTaskId, todos]);
+
+	const boardTaskGroups = useMemo(() => {
+		const active = todos.filter((task) => !task.completed);
+		if (active.length === 0) {
+			return { overdue: [] as TodoTask[], today: [] as TodoTask[], week: [] as TodoTask[] };
+		}
+
+		const sorted = [...active].sort(sortTasks);
+		const now = new Date();
+
+		const overdueMap = new Map<string, TodoTask>();
+		getOverdueTodos(sorted).forEach((task) => {
+			overdueMap.set(task.id, task);
+		});
+		sorted.forEach((task) => {
+			if (overdueMap.has(task.id)) return;
+			if (!task.reminder) return;
+			const reminderDate = new Date(task.reminder);
+			if (Number.isNaN(reminderDate.getTime())) return;
+			if (reminderDate < now) {
+				overdueMap.set(task.id, task);
+			}
+		});
+
+		const todayMap = new Map<string, TodoTask>();
+		getTodayTodos(sorted).forEach((task) => {
+			if (!overdueMap.has(task.id)) {
+				todayMap.set(task.id, task);
+			}
+		});
+		sorted.forEach((task) => {
+			if (overdueMap.has(task.id) || todayMap.has(task.id)) return;
+			if (!task.reminder) return;
+			const reminderDate = new Date(task.reminder);
+			if (Number.isNaN(reminderDate.getTime())) return;
+			if (isToday(reminderDate)) {
+				todayMap.set(task.id, task);
+			}
+		});
+
+		const weekMap = new Map<string, TodoTask>();
+		getWeekTodos(sorted).forEach((task) => {
+			if (!overdueMap.has(task.id) && !todayMap.has(task.id)) {
+				weekMap.set(task.id, task);
+			}
+		});
+		sorted.forEach((task) => {
+			if (overdueMap.has(task.id) || todayMap.has(task.id) || weekMap.has(task.id)) return;
+			if (!task.reminder) return;
+			const reminderDate = new Date(task.reminder);
+			if (Number.isNaN(reminderDate.getTime())) return;
+			if (isThisWeek(reminderDate, { weekStartsOn: 1 })) {
+				weekMap.set(task.id, task);
+			}
+		});
+
+		const toSortedArray = (map: Map<string, TodoTask>) =>
+			Array.from(map.values()).sort(sortTasks);
+
+		return {
+			overdue: toSortedArray(overdueMap),
+			today: toSortedArray(todayMap),
+			week: toSortedArray(weekMap),
+		};
+	}, [todos]);
+
+	const boardSections = useMemo(() => {
+		const sections: Array<{ key: string; title: string; tasks: TodoTask[] }> = [];
+		if (boardTaskGroups.overdue.length > 0) {
+			sections.push({ key: "overdue", title: "逾期", tasks: boardTaskGroups.overdue });
+		}
+		if (boardScope === "today") {
+			if (boardTaskGroups.today.length > 0) {
+				sections.push({ key: "today", title: "今日", tasks: boardTaskGroups.today });
+			}
+		} else if (boardTaskGroups.week.length > 0) {
+			sections.push({ key: "week", title: "本周", tasks: boardTaskGroups.week });
+		}
+		return sections;
+	}, [boardScope, boardTaskGroups]);
+
+	const boardTaskCount = useMemo(() => {
+		const overdueCount = boardTaskGroups.overdue.length;
+		if (boardScope === "today") {
+			return overdueCount + boardTaskGroups.today.length;
+		}
+		return overdueCount + boardTaskGroups.week.length;
+	}, [boardScope, boardTaskGroups]);
+
+	const hasBoardTasks = boardTaskCount > 0;
+
+	const reminderEntries = useMemo(
+		() =>
+			[...reminderLog]
+				.sort(
+					(a, b) =>
+						new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime(),
+				)
+				.slice(0, 20),
+		[reminderLog],
+	);
+
+	const todoMap = useMemo(() => new Map(todos.map((task) => [task.id, task])), [todos]);
 
 	useEffect(() => {
 		let isMounted = true;
@@ -121,20 +304,12 @@ const TodoWidgetPage: FC = () => {
 	useEffect(() => {
 		if (typeof window === "undefined") return;
 		const storedNotes = window.localStorage.getItem(NOTES_KEY);
-		const storedReminders = window.localStorage.getItem(REMINDERS_KEY);
 		const storedMemo = window.localStorage.getItem(MEMO_KEY);
 		if (storedNotes) {
 			try {
 				setNotes(JSON.parse(storedNotes));
 			} catch (error) {
 				console.warn("Failed to parse notes", error);
-			}
-		}
-		if (storedReminders) {
-			try {
-				setReminders(JSON.parse(storedReminders));
-			} catch (error) {
-				console.warn("Failed to parse reminders", error);
 			}
 		}
 		if (storedMemo) {
@@ -154,11 +329,6 @@ const TodoWidgetPage: FC = () => {
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
-		window.localStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
-	}, [reminders]);
-
-	useEffect(() => {
-		if (typeof window === "undefined") return;
 		window.localStorage.setItem(MEMO_KEY, memoText);
 	}, [memoText]);
 
@@ -166,15 +336,22 @@ const TodoWidgetPage: FC = () => {
 	const handleAddTask = () => {
 		const trimmed = title.trim();
 		if (!trimmed) return;
+		const parsed = parseQuickTaskInput(trimmed);
+		if (!parsed.title) return;
+		parsed.tags.forEach((tag) => upsertTag(tag));
+		if (parsed.category) {
+			upsertCategory(parsed.category);
+		}
 		addTodo({
-			title: trimmed,
+			title: parsed.title,
 			description: "",
 			notes: "",
 			reflection: "",
-			priority: "none",
+			priority: parsed.priority,
 			completed: false,
 			dueDate: getNextHalfHourIsoString(),
-			tags: [],
+			tags: parsed.tags,
+			category: parsed.category,
 			reminderSent: false,
 		});
 		setTitle("");
@@ -198,19 +375,153 @@ const TodoWidgetPage: FC = () => {
 		}
 	}, [currentWindow, isPinned]);
 
-const handleStatusChange = useCallback(
-	(id: string, status: TodoStatus) => {
-		updateTodo({
-			id,
-			changes: {
-				status,
-				completed: status === "completed",
-				reminderSent: status === "completed" ? true : undefined,
-			},
-		});
+	const handleToggleTaskCompletion = useCallback(
+		(task: TodoTask, completed: boolean) => {
+			const nextStatus: TodoStatus = completed
+				? "completed"
+				: task.status && task.status !== "completed"
+					? task.status
+					: "notStarted";
+			updateTodo({
+				id: task.id,
+				changes: {
+					completed,
+					status: nextStatus,
+					reminderSent: completed ? true : false,
+				},
+			});
+		},
+		[updateTodo],
+	);
+
+	const handleOpenPostponeMenu = useCallback((taskId: string, anchor: HTMLElement) => {
+		setPostponeMenu({ taskId, anchor });
+	}, []);
+
+	const handleClosePostponeMenu = useCallback(() => {
+		setPostponeMenu(null);
+	}, []);
+
+	const handlePostponeTask = useCallback(
+		(taskId: string, minutes: number): string | undefined => {
+			const target = todos.find((item) => item.id === taskId);
+			if (!target) return undefined;
+
+			const deltaMs = minutes * 60 * 1000;
+			const shiftValue = (value?: string) => {
+				if (!value) return undefined;
+				const date = new Date(value);
+				if (Number.isNaN(date.getTime())) return undefined;
+				return new Date(date.getTime() + deltaMs).toISOString();
+			};
+
+			const changes: Partial<TodoTask> = {
+				reminderSent: false,
+			};
+			let resultingReminder: string | undefined;
+
+			const nextDue = shiftValue(target.dueDate);
+			const nextDueEnd = shiftValue(target.dueDateEnd);
+			const nextReminder = shiftValue(target.reminder);
+
+			if (nextDue) {
+				changes.dueDate = nextDue;
+			} else if (!target.dueDate && nextDueEnd) {
+				changes.dueDate = nextDueEnd;
+			}
+			if (nextDueEnd) {
+				changes.dueDateEnd = nextDueEnd;
+			}
+			if (nextReminder) {
+				changes.reminder = nextReminder;
+				resultingReminder = nextReminder;
+			} else if (!target.reminder && (changes.dueDate || nextDue)) {
+				const fallbackReminder = changes.dueDate ?? nextDue;
+				if (fallbackReminder) {
+					changes.reminder = fallbackReminder;
+					resultingReminder = fallbackReminder;
+				}
+			}
+
+			if (!changes.dueDate && !changes.reminder) {
+				const fallback = new Date(Date.now() + deltaMs).toISOString();
+				changes.dueDate = fallback;
+				changes.reminder = fallback;
+				resultingReminder = fallback;
+			}
+
+			if (!resultingReminder && typeof changes.reminder === "string") {
+				resultingReminder = changes.reminder;
+			}
+
+			updateTodo({
+				id: taskId,
+				changes,
+			});
+			setPostponeMenu(null);
+		return resultingReminder;
 	},
-	[updateTodo],
-);
+	[todos, updateTodo],
+	);
+
+	const handleSnoozeReminderEntry = useCallback(
+		(entry: TodoReminderLogEntry, minutes: number) => {
+			const task = todoMap.get(entry.taskId);
+			if (!task) return;
+			const nextReminder = handlePostponeTask(entry.taskId, minutes);
+			if (nextReminder) {
+				updateReminderLog({
+					id: entry.id,
+					changes: {
+						snoozedUntil: nextReminder,
+						completed: false,
+					},
+				});
+			}
+		},
+		[handlePostponeTask, todoMap, updateReminderLog],
+	);
+
+	const handleCompleteReminderEntry = useCallback(
+		(entry: TodoReminderLogEntry) => {
+			const task = todoMap.get(entry.taskId);
+			if (task) {
+				updateTodo({
+					id: entry.taskId,
+					changes: {
+						completed: true,
+						status: "completed",
+						reminderSent: true,
+					},
+				});
+			}
+			updateReminderLog({
+				id: entry.id,
+				changes: {
+					completed: true,
+				},
+			});
+		},
+		[todoMap, updateReminderLog, updateTodo],
+	);
+
+	const handleEditTask = useCallback((task: TodoTask) => {
+		setEditingTask(task);
+	}, []);
+
+	const handleCloseEditDialog = useCallback(() => {
+		setEditingTask(null);
+	}, []);
+
+	const handleOpenReminderDetails = useCallback(
+		(entry: TodoReminderLogEntry) => {
+			const task = todoMap.get(entry.taskId);
+			if (task) {
+				handleEditTask(task);
+			}
+		},
+		[handleEditTask, todoMap],
+	);
 
 	const handleOpenTimeLog = useCallback((task: TodoTask) => {
 		setTimeLogTaskId(task.id);
@@ -250,24 +561,12 @@ const handleStatusChange = useCallback(
 		});
 	}, [notes]);
 
-	const upcomingReminders = useMemo(() => {
-		return [...reminders].sort((a, b) => {
-			const timeA = a.time
-				? new Date(a.time).getTime()
-				: Number.POSITIVE_INFINITY;
-			const timeB = b.time
-				? new Date(b.time).getTime()
-				: Number.POSITIVE_INFINITY;
-			return timeA - timeB;
-		});
-	}, [reminders]);
-
 	const addNote = () => {
 		const trimmed = noteDraft.trim();
 		if (!trimmed) return;
 		setNotes((prev) => [
 			{
-				id: createId(),
+				id: createNoteId(),
 				text: trimmed,
 				createdAt: new Date().toISOString(),
 			},
@@ -287,41 +586,6 @@ const handleStatusChange = useCallback(
 	const deleteNote = (id: string) => {
 		setNotes((prev) => prev.filter((note) => note.id !== id));
 	};
-
-	const addReminder = () => {
-		const trimmed = reminderDraft.text.trim();
-		if (!trimmed) return;
-		setReminders((prev) => [
-			{
-				id: createId(),
-				text: trimmed,
-				time: reminderDraft.time || undefined,
-				done: false,
-			},
-			...prev,
-		]);
-		setReminderDraft({ text: "", time: "" });
-	};
-
-	const toggleReminderDone = (id: string) => {
-		setReminders((prev) =>
-			prev.map((item) =>
-				item.id === id ? { ...item, done: !item.done } : item,
-			),
-		);
-	};
-
-	const deleteReminder = (id: string) => {
-		setReminders((prev) => prev.filter((item) => item.id !== id));
-	};
-
-	const handleEditTask = useCallback((task: TodoTask) => {
-		setEditingTask(task);
-	}, []);
-
-	const handleCloseEditDialog = useCallback(() => {
-		setEditingTask(null);
-	}, []);
 
 	const handleTestNotification = useCallback(async () => {
 		try {
@@ -620,347 +884,69 @@ const handleStatusChange = useCallback(
 					</ToggleButton>
 				</ToggleButtonGroup>
 
-				{viewMode === "board" && (
-					<Stack spacing={1.5} sx={{ flex: 1, overflow: "hidden" }}>
-						<Stack direction="row" spacing={1.5}>
-							<TextField
-								value={title}
-								onChange={(event) => setTitle(event.target.value)}
-								placeholder="快速记录任务"
-								size="small"
-								fullWidth
-								sx={{
-									"& .MuiOutlinedInput-root": {
-										borderRadius: 2,
-										background: "rgba(255, 255, 255, 0.8)",
-										backdropFilter: "blur(10px)",
-										"&:hover": {
-											background: "rgba(255, 255, 255, 0.9)",
-										},
-										"&.Mui-focused": {
-											background: "rgba(255, 255, 255, 0.95)",
-										},
-									},
-								}}
-								onKeyDown={(event) => {
-									if (event.key === "Enter") {
-										event.preventDefault();
-										handleAddTask();
-									}
-								}}
-							/>
-							<Button 
-								variant="contained" 
-								size="small" 
-								onClick={handleAddTask}
-								sx={{
-									borderRadius: 2,
-									background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-									"&:hover": {
-										background: "linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)",
-									},
-									px: 2,
-								}}
-							>
-								添加
-							</Button>
-						</Stack>
-					<Box sx={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-						<TodoKanbanBoard
-							tasks={todos}
-							onStatusChange={handleStatusChange}
-							onEditTask={handleEditTask}
-							onLogTime={handleOpenTimeLog}
-						/>
-					</Box>
-				</Stack>
-			)}
+		{viewMode === "board" && (
+			<WidgetBoardView
+				inputValue={title}
+				onInputChange={setTitle}
+				onSubmit={handleAddTask}
+				boardScope={boardScope}
+				onBoardScopeChange={setBoardScope}
+				sections={boardSections}
+				taskCount={boardTaskCount}
+				hasTasks={hasBoardTasks}
+				onToggleTask={handleToggleTaskCompletion}
+				onOpenPostponeMenu={handleOpenPostponeMenu}
+				onOpenTimeLog={handleOpenTimeLog}
+				onOpenTaskDetails={handleEditTask}
+			/>
+		)}
 
-				{viewMode === "notes" && (
-					<Stack spacing={1.5} sx={{ flex: 1, overflow: "hidden" }}>
-						<Stack direction="row" spacing={1.5}>
-							<TextField
-								value={noteDraft}
-								onChange={(event) => setNoteDraft(event.target.value)}
-								placeholder="记下灵感..."
-								size="small"
-								fullWidth
-								sx={{
-									"& .MuiOutlinedInput-root": {
-										borderRadius: 2,
-										background: "rgba(255, 255, 255, 0.8)",
-										backdropFilter: "blur(10px)",
-										"&:hover": {
-											background: "rgba(255, 255, 255, 0.9)",
-										},
-										"&.Mui-focused": {
-											background: "rgba(255, 255, 255, 0.95)",
-										},
-									},
-								}}
-								onKeyDown={(event) => {
-									if (event.key === "Enter") {
-										event.preventDefault();
-										addNote();
-									}
-								}}
-							/>
-							<Button 
-								variant="contained" 
-								size="small" 
-								onClick={addNote}
-								sx={{
-									borderRadius: 2,
-									background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-									"&:hover": {
-										background: "linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)",
-									},
-									px: 2,
-								}}
-							>
-								添加
-							</Button>
-						</Stack>
-						<Box
-							sx={{
-								flex: 1,
-								overflow: "auto",
-								borderRadius: 2,
-								border: "1px solid rgba(102, 126, 234, 0.2)",
-								background: "rgba(255, 255, 255, 0.6)",
-								backdropFilter: "blur(10px)",
-							}}
-						>
-							{sortedNotes.length === 0 ? (
-								<Stack alignItems="center" justifyContent="center" height={160}>
-									<Typography variant="caption" color="text.secondary">
-										暂无笔记，快速记录一点什么吧
-									</Typography>
-								</Stack>
-							) : (
-								<List dense disablePadding>
-									{sortedNotes.map((note) => (
-										<ListItem
-											key={note.id}
-											secondaryAction={
-												<Stack
-													direction="row"
-													spacing={0.5}
-													alignItems="center"
-												>
-													<IconButton
-														size="small"
-														onClick={() => togglePinNote(note.id)}
-													>
-														{note.pinned ? (
-															<PushPinIcon fontSize="small" />
-														) : (
-															<PushPinOutlinedIcon fontSize="small" />
-														)}
-													</IconButton>
-													<IconButton
-														size="small"
-														onClick={() => deleteNote(note.id)}
-													>
-														<DeleteOutlineIcon fontSize="small" />
-													</IconButton>
-												</Stack>
-											}
-											disablePadding
-										>
-											<ListItemText
-												primary={note.text}
-												secondary={
-													<Typography variant="caption" color="text.secondary">
-														{new Date(note.createdAt).toLocaleString()}
-													</Typography>
-												}
-												primaryTypographyProps={{
-													style: { wordBreak: "break-word" },
-												}}
-											/>
-										</ListItem>
-									))}
-								</List>
-							)}
-						</Box>
-					</Stack>
-				)}
+		{viewMode === "notes" && (
+			<WidgetNotesView
+				draft={noteDraft}
+				onDraftChange={setNoteDraft}
+				notes={sortedNotes}
+				onAddNote={addNote}
+				onTogglePin={togglePinNote}
+				onDelete={deleteNote}
+			/>
+		)}
 
-				{viewMode === "reminders" && (
-					<Stack spacing={1.5} sx={{ flex: 1, overflow: "hidden" }}>
-						<Stack direction="row" spacing={1.5}>
-							<TextField
-								value={reminderDraft.text}
-								onChange={(event) =>
-									setReminderDraft((prev) => ({
-										...prev,
-										text: event.target.value,
-									}))
-								}
-								placeholder="提醒内容"
-								size="small"
-								fullWidth
-								sx={{
-									"& .MuiOutlinedInput-root": {
-										borderRadius: 2,
-										background: "rgba(255, 255, 255, 0.8)",
-										backdropFilter: "blur(10px)",
-										"&:hover": {
-											background: "rgba(255, 255, 255, 0.9)",
-										},
-										"&.Mui-focused": {
-											background: "rgba(255, 255, 255, 0.95)",
-										},
-									},
-								}}
-							/>
-							<TextField
-								type="datetime-local"
-								value={reminderDraft.time}
-								onChange={(event) =>
-									setReminderDraft((prev) => ({
-										...prev,
-										time: event.target.value,
-									}))
-								}
-								size="small"
-								InputLabelProps={{ shrink: true }}
-								sx={{ 
-									width: 180,
-									"& .MuiOutlinedInput-root": {
-										borderRadius: 2,
-										background: "rgba(255, 255, 255, 0.8)",
-										backdropFilter: "blur(10px)",
-										"&:hover": {
-											background: "rgba(255, 255, 255, 0.9)",
-										},
-										"&.Mui-focused": {
-											background: "rgba(255, 255, 255, 0.95)",
-										},
-									},
-								}}
-							/>
-							<Button 
-								variant="contained" 
-								size="small" 
-								onClick={addReminder}
-								sx={{
-									borderRadius: 2,
-									background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-									"&:hover": {
-										background: "linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)",
-									},
-									px: 2,
-								}}
-							>
-								添加
-							</Button>
-						</Stack>
-						<Box
-							sx={{
-								flex: 1,
-								overflow: "auto",
-								borderRadius: 2,
-								border: "1px solid rgba(102, 126, 234, 0.2)",
-								background: "rgba(255, 255, 255, 0.6)",
-								backdropFilter: "blur(10px)",
-							}}
-						>
-							{upcomingReminders.length === 0 ? (
-								<Stack alignItems="center" justifyContent="center" height={160}>
-									<Typography variant="caption" color="text.secondary">
-										暂无提醒，添加一条吧
-									</Typography>
-								</Stack>
-							) : (
-								<List dense disablePadding>
-									{upcomingReminders.map((item) => (
-										<ListItem
-											key={item.id}
-											disablePadding
-											secondaryAction={
-												<IconButton
-													size="small"
-													onClick={() => deleteReminder(item.id)}
-												>
-													<DeleteOutlineIcon fontSize="small" />
-												</IconButton>
-											}
-										>
-											<Checkbox
-												size="small"
-												checked={item.done}
-												onChange={() => toggleReminderDone(item.id)}
-											/>
-											<ListItemText
-												primary={
-													<Typography
-														variant="body2"
-														sx={{
-															textDecoration: item.done
-																? "line-through"
-																: "none",
-														}}
-													>
-														{item.text}
-													</Typography>
-												}
-												secondary={
-													item.time ? (
-														<Typography
-															variant="caption"
-															color="text.secondary"
-														>
-															{new Date(item.time).toLocaleString()}
-														</Typography>
-													) : (
-														<Typography
-															variant="caption"
-															color="text.secondary"
-														>
-															无具体时间
-														</Typography>
-													)
-												}
-												primaryTypographyProps={{
-													style: { wordBreak: "break-word" },
-												}}
-											/>
-										</ListItem>
-									))}
-								</List>
-							)}
-						</Box>
-					</Stack>
-				)}
+		{viewMode === "reminders" && (
+			<WidgetRemindersView
+				entries={reminderEntries}
+				taskLookup={todoMap}
+				onOpenTask={handleOpenReminderDetails}
+				onSnooze={handleSnoozeReminderEntry}
+				onComplete={handleCompleteReminderEntry}
+			/>
+		)}
 
-				{viewMode === "memo" && (
-					<TextField
-						value={memoText}
-						onChange={(event) => setMemoText(event.target.value)}
-						placeholder="写下你的便签..."
-						fullWidth
-						multiline
-						minRows={12}
-						sx={{ 
-							flex: 1, 
-							textarea: { lineHeight: 1.6 },
-							"& .MuiOutlinedInput-root": {
-								borderRadius: 2,
-								background: "rgba(255, 255, 255, 0.8)",
-								backdropFilter: "blur(10px)",
-								"&:hover": {
-									background: "rgba(255, 255, 255, 0.9)",
-								},
-								"&.Mui-focused": {
-									background: "rgba(255, 255, 255, 0.95)",
-								},
-							},
-						}}
-					/>
+		{viewMode === "memo" && (
+			<WidgetMemoView value={memoText} onChange={setMemoText} />
 		)}
 	</Stack>
+
+	<Menu
+		anchorEl={postponeMenu?.anchor ?? null}
+		open={Boolean(postponeMenu)}
+		onClose={handleClosePostponeMenu}
+		anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+		transformOrigin={{ vertical: "top", horizontal: "right" }}
+	>
+		{POSTPONE_OPTIONS.map((option) => (
+			<MenuItem
+				key={option.minutes}
+				onClick={() => {
+					if (postponeMenu) {
+						handlePostponeTask(postponeMenu.taskId, option.minutes);
+					}
+				}}
+			>
+				{option.label}
+			</MenuItem>
+		))}
+	</Menu>
 
 	<TodoTimeLogDialog
 		open={timeLogOpen}
@@ -968,6 +954,7 @@ const handleStatusChange = useCallback(
 		onClose={handleCloseTimeLog}
 		onSubmit={handleSubmitTimeEntry}
 		onDeleteEntry={handleDeleteTimeEntry}
+		mode="simple"
 	/>
 
 	{/* 任务编辑对话框 */}

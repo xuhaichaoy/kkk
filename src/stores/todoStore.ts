@@ -19,6 +19,28 @@ export interface TodoTimeEntry {
 
 export const DEFAULT_CATEGORY = "👋 欢迎";
 
+const collectTagsFromTodos = (todos: TodoTask[]): string[] => {
+	const collected = new Set<string>();
+	todos.forEach((todo) => {
+		todo.tags
+			.map((tag) => tag.trim())
+			.filter((tag) => tag.length > 0)
+			.forEach((tag) => collected.add(tag));
+	});
+	return Array.from(collected);
+};
+
+const collectCategoriesFromTodos = (todos: TodoTask[]): string[] => {
+	const collected = new Set<string>();
+	todos.forEach((todo) => {
+		const normalized = todo.category?.trim();
+		if (normalized && normalized !== DEFAULT_CATEGORY) {
+			collected.add(normalized);
+		}
+	});
+	return Array.from(collected);
+};
+
 export interface TodoTask {
 	id: string;
 	title: string;
@@ -77,18 +99,18 @@ export const calendarMonthAtom = atom<Date>(new Date());
 export const addTodoAtom = atom(
 	false,
 	(get, set, task: Omit<TodoTask, "id" | "createdAt" | "updatedAt">) => {
-		const existing = get(todosAtom);
-		const now = new Date().toISOString();
-		const newTask = {
-			id: crypto.randomUUID(),
-			createdAt: now,
-			updatedAt: now,
-			...task,
-			timeEntries: task.timeEntries ?? [],
-			quadrant: task.quadrant ?? "urgentImportant",
-		};
+	const existing = get(todosAtom);
+	const now = new Date().toISOString();
+	const newTask = {
+		id: crypto.randomUUID(),
+		createdAt: now,
+		updatedAt: now,
+		...task,
+		timeEntries: task.timeEntries ?? [],
+		quadrant: task.quadrant ?? "urgentImportant",
+	};
 
-		debugLog("➕ 新建任务:", {
+	debugLog("➕ 新建任务:", {
 			newTask,
 			dueDate: newTask.dueDate,
 			reminder: newTask.reminder,
@@ -102,7 +124,10 @@ export const addTodoAtom = atom(
 				: "no reminder",
 		});
 
-		set(todosAtom, [newTask, ...existing]);
+	const updatedTodos = [newTask, ...existing];
+	set(todosAtom, updatedTodos);
+	set(tagsAtom, collectTagsFromTodos(updatedTodos));
+	set(categoriesAtom, collectCategoriesFromTodos(updatedTodos));
 	},
 );
 
@@ -201,10 +226,10 @@ export const updateTodoAtom = atom(
 			reminderType: typeof update.changes.reminder,
 		});
 
-		const newTodos = existing.map((todo) =>
-			todo.id === update.id
-				? {
-						...todo,
+	const newTodos = existing.map((todo) =>
+		todo.id === update.id
+			? {
+				...todo,
 						...update.changes,
 						updatedAt: new Date().toISOString(),
 						completedAt:
@@ -231,33 +256,35 @@ export const updateTodoAtom = atom(
 				: "no reminder",
 		});
 
-		set(todosAtom, newTodos);
-	},
+	set(todosAtom, newTodos);
+	set(tagsAtom, collectTagsFromTodos(newTodos));
+	set(categoriesAtom, collectCategoriesFromTodos(newTodos));
+},
 );
 
 export const removeTodoAtom = atom(null, (get, set, id: string) => {
 	const existing = get(todosAtom);
-	set(
-		todosAtom,
-		existing.filter((todo) => todo.id !== id),
-	);
+	const filtered = existing.filter((todo) => todo.id !== id);
+	set(todosAtom, filtered);
+	set(tagsAtom, collectTagsFromTodos(filtered));
+	set(categoriesAtom, collectCategoriesFromTodos(filtered));
 });
 
 export const toggleTodoAtom = atom(null, (get, set, id: string) => {
 	const existing = get(todosAtom);
-	set(
-		todosAtom,
-		existing.map((todo) =>
-			todo.id === id
-				? {
-						...todo,
-						completed: !todo.completed,
-						updatedAt: new Date().toISOString(),
-						completedAt: !todo.completed ? new Date().toISOString() : undefined,
-					}
-				: todo,
-		),
+	const updated = existing.map((todo) =>
+		todo.id === id
+			? {
+				...todo,
+				completed: !todo.completed,
+				updatedAt: new Date().toISOString(),
+				completedAt: !todo.completed ? new Date().toISOString() : undefined,
+			}
+			: todo,
 	);
+	set(todosAtom, updated);
+	set(tagsAtom, collectTagsFromTodos(updated));
+	set(categoriesAtom, collectCategoriesFromTodos(updated));
 });
 
 export const upsertTagAtom = atom(null, (get, set, tag: string) => {
@@ -308,10 +335,10 @@ export const removeCategoryAtom = atom(null, (get, set, category: string) => {
 });
 
 export const clearCompletedAtom = atom(null, (get, set) => {
-	set(
-		todosAtom,
-		get(todosAtom).filter((todo) => !todo.completed),
-	);
+	const remaining = get(todosAtom).filter((todo) => !todo.completed);
+	set(todosAtom, remaining);
+	set(tagsAtom, collectTagsFromTodos(remaining));
+	set(categoriesAtom, collectCategoriesFromTodos(remaining));
 });
 
 export const todayTasksAtom = atom((get) => {
