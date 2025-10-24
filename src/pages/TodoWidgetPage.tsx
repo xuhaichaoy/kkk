@@ -790,7 +790,7 @@ const handleTestNotification = useCallback(async () => {
 							fontSize: "0.9rem",
 						}}
 					>
-						掌上任务助手
+						kk
 					</Typography>
 				</Box>
 				<Stack
@@ -987,59 +987,61 @@ const handleTestNotification = useCallback(async () => {
 					</ToggleButton>
 				</ToggleButtonGroup>
 
-				<Box
-					sx={{
-						borderRadius: 2,
-						border: "1px solid rgba(102, 126, 234, 0.2)",
-						background: "rgba(255, 255, 255, 0.85)",
-						backdropFilter: "blur(10px)",
-						p: 1.5,
-					}}
-				>
-					<Stack direction="row" spacing={1.5} alignItems="center">
-						<TextField
-							value={title}
-							onChange={(event) => setTitle(event.target.value)}
-							placeholder="快速添加今日任务，支持 @标签 #分类 !优先级"
-							size="small"
-							fullWidth
-							sx={{
-								"& .MuiOutlinedInput-root": {
-									borderRadius: 2,
-									background: "rgba(255, 255, 255, 0.9)",
-									"&:hover": {
-										background: "rgba(255, 255, 255, 0.95)",
+				{(viewMode === "board" || viewMode === "reminders") && (
+					<Box
+						sx={{
+							borderRadius: 2,
+							border: "1px solid rgba(102, 126, 234, 0.2)",
+							background: "rgba(255, 255, 255, 0.85)",
+							backdropFilter: "blur(10px)",
+							p: 1.5,
+						}}
+					>
+						<Stack direction="row" spacing={1.5} alignItems="center">
+							<TextField
+								value={title}
+								onChange={(event) => setTitle(event.target.value)}
+								placeholder="快速添加今日任务，支持 @标签 #分类 !优先级"
+								size="small"
+								fullWidth
+								sx={{
+									"& .MuiOutlinedInput-root": {
+										borderRadius: 2,
+										background: "rgba(255, 255, 255, 0.9)",
+										"&:hover": {
+											background: "rgba(255, 255, 255, 0.95)",
+										},
+										"&.Mui-focused": {
+											background: "rgba(255, 255, 255, 1)",
+										},
 									},
-									"&.Mui-focused": {
-										background: "rgba(255, 255, 255, 1)",
-									},
-								},
-							}}
-							onKeyDown={(event) => {
-								if (event.key === "Enter") {
-									event.preventDefault();
-									handleAddTask();
-								}
-							}}
-						/>
-						<Button
-							variant="contained"
-							onClick={handleAddTask}
-							sx={{ borderRadius: 2, px: 3, flexShrink: 0 }}
-						>
-							添加
-						</Button>
-						<Button
-							variant="outlined"
-							startIcon={<AccessTimeIcon fontSize="small" />}
-							onClick={handleQuickLog}
-							disabled={!primaryTask}
-							sx={{ flexShrink: 0 }}
-						>
-							登记用时
-						</Button>
-					</Stack>
-				</Box>
+								}}
+								onKeyDown={(event) => {
+									if (event.key === "Enter") {
+										event.preventDefault();
+										handleAddTask();
+									}
+								}}
+							/>
+							<Button
+								variant="contained"
+								onClick={handleAddTask}
+								sx={{ borderRadius: 2, px: 3, flexShrink: 0 }}
+							>
+								添加
+							</Button>
+							<Button
+								variant="outlined"
+								startIcon={<AccessTimeIcon fontSize="small" />}
+								onClick={handleQuickLog}
+								disabled={!primaryTask}
+								sx={{ flexShrink: 0 }}
+							>
+								登记用时
+							</Button>
+						</Stack>
+					</Box>
+				)}
 
 				{viewMode === "board" && (
 					<WidgetBoardView
