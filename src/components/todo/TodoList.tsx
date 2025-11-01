@@ -4,17 +4,23 @@ import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
 import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditIcon from "@mui/icons-material/Edit";
+import ArchiveIcon from "@mui/icons-material/Archive";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import {
 	Box,
 	Checkbox,
 	Chip,
+	Collapse,
 	IconButton,
 	Stack,
 	Tooltip,
 	Typography,
+	Button,
+	Divider,
 } from "@mui/material";
 import { format } from "date-fns";
-import React, { type ChangeEvent, type MouseEvent } from "react";
+import React, { type ChangeEvent, type MouseEvent, useState, useMemo } from "react";
 import type { TodoPriority, TodoTask } from "../../stores/todoStore";
 import { getTaskDateRange } from "../../utils/todoUtils";
 
@@ -74,6 +80,20 @@ const TodoList = ({
 	onSelect,
 	onLogTime,
 }: TodoListProps) => {
+	const [archiveExpanded, setArchiveExpanded] = useState(false);
+
+	// 分离已完成和未完成的任务
+	const { activeTasks, completedTasks } = useMemo(() => {
+		const active = tasks.filter((task) => !task.completed);
+		const completed = tasks.filter((task) => task.completed);
+		// 按完成时间倒序排列已完成任务
+		completed.sort((a, b) => {
+			const aTime = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+			const bTime = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+			return bTime - aTime;
+		});
+		return { activeTasks: active, completedTasks: completed };
+	}, [tasks]);
 	const renderTask = (task: TodoTask) => {
 		const priority = task.priority ?? "none";
 		const scheduleLabel = formatTaskSchedule(task);
@@ -334,13 +354,14 @@ const TodoList = ({
 	return (
 		<Box
 			sx={{
-				maxHeight: { xs: 520, md: 640 },
-				minHeight: tasks.length > 0 ? 220 : 180,
+				minHeight: activeTasks.length > 0 ? 220 : 180,
 				overflowY: "auto",
 				pr: 0.5,
+				display: "flex",
+				flexDirection: "column",
 			}}
 		>
-			{tasks.length === 0 ? (
+			{activeTasks.length === 0 && completedTasks.length === 0 ? (
 				<Stack
 					height="100%"
 					alignItems="center"
@@ -351,13 +372,47 @@ const TodoList = ({
 						暂无任务
 					</Typography>
 					<Typography variant="body2" color="text.disabled">
-						点击“新建任务”快速创建第一条任务。
+						点击"新建任务"快速创建第一条任务。
 					</Typography>
 				</Stack>
 			) : (
-				<Stack spacing={1.5} pb={1}>
-					{tasks.map(renderTask)}
-				</Stack>
+				<>
+					{/* 未完成任务列表 */}
+					<Stack spacing={1.5} pb={completedTasks.length > 0 ? 2 : 1}>
+						{activeTasks.map(renderTask)}
+					</Stack>
+
+					{/* 归档区域 */}
+					{completedTasks.length > 0 && (
+						<Box sx={{ mt: "auto" }}>
+							<Divider sx={{ mb: 1.5 }} />
+							<Button
+								fullWidth
+								startIcon={<ArchiveIcon />}
+								endIcon={archiveExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+								onClick={() => setArchiveExpanded(!archiveExpanded)}
+								sx={{
+									justifyContent: "space-between",
+									textTransform: "none",
+									color: "text.secondary",
+									py: 1,
+									"&:hover": {
+										backgroundColor: "action.hover",
+									},
+								}}
+							>
+								<Typography variant="body2" fontWeight={500}>
+									已完成任务 ({completedTasks.length})
+								</Typography>
+							</Button>
+							<Collapse in={archiveExpanded}>
+								<Stack spacing={1.5} sx={{ pt: 1.5, pb: 1 }}>
+									{completedTasks.map(renderTask)}
+								</Stack>
+							</Collapse>
+						</Box>
+					)}
+				</>
 			)}
 		</Box>
 	);

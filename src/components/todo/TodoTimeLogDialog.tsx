@@ -43,17 +43,24 @@ interface TodoTimeLogDialogProps {
 interface FormState {
 	entryId?: string;
 	date: Dayjs;
+	startTime: Dayjs | null;
+	endTime: Dayjs | null;
 	durationMinutes: number;
 	comment: string;
 }
 
 const DEFAULT_DURATION = 60;
 
-const createInitialState = (): FormState => ({
-	date: dayjs(),
-	durationMinutes: DEFAULT_DURATION,
-	comment: "",
-});
+const createInitialState = (): FormState => {
+	const now = dayjs();
+	return {
+		date: now,
+		startTime: now,
+		endTime: now.add(DEFAULT_DURATION, "minute"),
+		durationMinutes: DEFAULT_DURATION,
+		comment: "",
+	};
+};
 
 const toDayjs = (value?: string): Dayjs => {
 	if (!value) return dayjs();
@@ -91,18 +98,34 @@ const TodoTimeLogDialog: React.FC<TodoTimeLogDialogProps> = ({
 		[entries],
 	);
 
+	// 根据开始时间和结束时间自动计算耗时（分钟）
+	const calculatedDuration = useMemo(() => {
+		if (!formState.startTime || !formState.endTime) {
+			return 0;
+		}
+		if (!formState.startTime.isValid() || !formState.endTime.isValid()) {
+			return 0;
+		}
+		const diff = formState.endTime.diff(formState.startTime, "minute", true);
+		return diff > 0 ? Math.round(diff) : 0;
+	}, [formState.startTime, formState.endTime]);
+
 	const handleSubmit = () => {
 		if (!task) return;
-		if (!formState.date || !formState.date.isValid()) return;
-		if (!Number.isFinite(formState.durationMinutes) || formState.durationMinutes <= 0) {
+		if (!formState.startTime || !formState.startTime.isValid()) return;
+		if (!formState.endTime || !formState.endTime.isValid()) return;
+		
+		const duration = calculatedDuration;
+		if (!Number.isFinite(duration) || duration <= 0) {
 			return;
 		}
 
+		// 使用开始时间作为日期
 		onSubmit({
 			taskId: task.id,
 			entryId: formState.entryId,
-			date: formState.date.toISOString(),
-			durationMinutes: Math.round(formState.durationMinutes),
+			date: formState.startTime.toISOString(),
+			durationMinutes: duration,
 			comment: formState.comment.trim() ? formState.comment.trim() : undefined,
 		});
 
@@ -110,9 +133,12 @@ const TodoTimeLogDialog: React.FC<TodoTimeLogDialogProps> = ({
 	};
 
 	const handleEdit = (entry: TodoTimeEntry) => {
+		const entryDate = toDayjs(entry.date);
 		setFormState({
 			entryId: entry.id,
-			date: toDayjs(entry.date),
+			date: entryDate,
+			startTime: entryDate,
+			endTime: entryDate.add(entry.durationMinutes, "minute"),
 			durationMinutes: entry.durationMinutes,
 			comment: entry.comment ?? "",
 		});
@@ -142,12 +168,34 @@ const TodoTimeLogDialog: React.FC<TodoTimeLogDialogProps> = ({
 					<Stack spacing={3} sx={{ mt: 0.5 }}>
 						<Stack spacing={2.5}>
 						<DateTimePicker
-							label="日期"
-							value={formState.date}
+							label="开始时间"
+							value={formState.startTime}
 							onChange={(value) =>
 								setFormState((prev) => ({
 									...prev,
+									startTime: value && value.isValid() ? value : prev.startTime,
 									date: value && value.isValid() ? value : prev.date,
+								}))
+							}
+							disabled={!task}
+							ampm={false}
+							views={["year", "month", "day", "hours", "minutes"]}
+							format="YYYY-MM-DD HH:mm"
+							timeSteps={{ minutes: 1 }}
+							slotProps={{
+								textField: {
+									fullWidth: true,
+									disabled: !task,
+								},
+							}}
+						/>
+						<DateTimePicker
+							label="结束时间"
+							value={formState.endTime}
+							onChange={(value) =>
+								setFormState((prev) => ({
+									...prev,
+									endTime: value && value.isValid() ? value : prev.endTime,
 								}))
 							}
 							disabled={!task}
@@ -165,16 +213,11 @@ const TodoTimeLogDialog: React.FC<TodoTimeLogDialogProps> = ({
 						<TextField
 							label="耗时（分钟）"
 							type="number"
-							value={formState.durationMinutes}
-							onChange={(event) =>
-								setFormState((prev) => ({
-									...prev,
-									durationMinutes: Number(event.target.value ?? 0),
-								}))
-							}
+							value={calculatedDuration}
 							fullWidth
-							inputProps={{ min: 1 }}
+							inputProps={{ min: 1, readOnly: true }}
 							disabled={!task}
+							helperText="自动根据开始时间和结束时间计算"
 						/>
 						<TextField
 							label="备注"
@@ -213,7 +256,7 @@ const TodoTimeLogDialog: React.FC<TodoTimeLogDialogProps> = ({
 						<Button
 							variant="contained"
 							onClick={handleSubmit}
-							disabled={!task || formState.durationMinutes <= 0}
+							disabled={!task || !formState.startTime || !formState.endTime || calculatedDuration <= 0}
 							sx={{
 								borderRadius: 2,
 								px: 3,
