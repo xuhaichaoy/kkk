@@ -2,6 +2,7 @@
 
 mod speech;
 
+#[cfg(not(target_os = "windows"))]
 use speech::{
     cancel_transcription, delete_speech_session, ensure_speech_model, export_speech_sessions,
     import_speech_sessions, list_speech_sessions, open_speech_session_folder, transcribe_audio,
@@ -41,26 +42,38 @@ fn open_todo_widget(app_handle: tauri::AppHandle) -> Result<(), String> {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            let handle = app.handle();
-            let manager = SpeechManager::new(&handle).map_err(|e| {
-                let boxed: Box<dyn std::error::Error> = Box::new(e);
-                boxed
-            })?;
-            app.manage(manager);
+            #[cfg(not(target_os = "windows"))]
+            {
+                let handle = app.handle();
+                let manager = SpeechManager::new(&handle).map_err(|e| {
+                    let boxed: Box<dyn std::error::Error> = Box::new(e);
+                    boxed
+                })?;
+                app.manage(manager);
+            }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            open_todo_widget,
-            ensure_speech_model,
-            list_speech_sessions,
-            delete_speech_session,
-            update_speech_session,
-            transcribe_audio,
-            cancel_transcription,
-            open_speech_session_folder,
-            export_speech_sessions,
-            import_speech_sessions
-        ])
+        .invoke_handler({
+            #[cfg(target_os = "windows")]
+            {
+                tauri::generate_handler![open_todo_widget]
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                tauri::generate_handler![
+                    open_todo_widget,
+                    ensure_speech_model,
+                    list_speech_sessions,
+                    delete_speech_session,
+                    update_speech_session,
+                    transcribe_audio,
+                    cancel_transcription,
+                    open_speech_session_folder,
+                    export_speech_sessions,
+                    import_speech_sessions
+                ]
+            }
+        })
         .plugin(tauri_plugin_fs::init())
         // 暂时禁用 window-state 插件来避免窗口状态冲突
         // .plugin(tauri_plugin_window_state::Builder::new().build())

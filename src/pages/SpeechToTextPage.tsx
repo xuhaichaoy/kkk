@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Box, Stack } from '@mui/material';
+import { Alert, Box, Stack, Typography } from '@mui/material';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { readFile, BaseDirectory } from '@tauri-apps/plugin-fs';
@@ -10,6 +10,7 @@ import SessionHistory from '../components/speech/SessionHistory';
 import { PageHeader, CardContainer } from '../components/common';
 import { useStatusBar } from '../components/common/StatusBar';
 import { blobTo16kWavBase64 } from '../utils/audioUtils';
+import { SPEECH_SUPPORTED } from '../utils/platform';
 import type {
   ModelDownloadProgress,
   ModelStatusEvent,
@@ -21,6 +22,29 @@ import type {
 } from '../types/speech';
 
 const SpeechToTextPage: React.FC = () => {
+  if (!SPEECH_SUPPORTED) {
+    return (
+      <Box
+        sx={{
+          maxWidth: '600px',
+          margin: '0 auto',
+          p: { xs: 2, sm: 3, md: 4 },
+        }}
+      >
+        <Alert
+          severity="info"
+          sx={{
+            borderRadius: 2,
+            borderLeft: '4px solid',
+            borderLeftColor: 'info.main',
+            boxShadow: 1,
+          }}
+        >
+          当前 Windows 版本已移除语音识别功能。
+        </Alert>
+      </Box>
+    );
+  }
   const [language, setLanguage] = React.useState<SpeechLanguage>('zh');
   const [isRecording, setIsRecording] = React.useState(false);
   const [modelReady, setModelReady] = React.useState(false);
@@ -28,6 +52,8 @@ const SpeechToTextPage: React.FC = () => {
   const [transcribing, setTranscribing] = React.useState(false);
   const [ensuringModel, setEnsuringModel] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [manualModelMessage, setManualModelMessage] = React.useState<string | null>(null);
+  const [manualModelPath, setManualModelPath] = React.useState<string | null>(null);
   const [transcriptDraft, setTranscriptDraft] = React.useState('');
   const [segments, setSegments] = React.useState<TranscriptSegment[]>([]);
   const [sessions, setSessions] = React.useState<SpeechSession[]>([]);
@@ -310,6 +336,12 @@ const SpeechToTextPage: React.FC = () => {
       timeout = window.setTimeout(() => {
         resetStatus();
       }, 3200);
+    } else if (manualModelMessage) {
+      setStatus(() => ({
+        message: manualModelMessage,
+        detail: manualModelPath ? `模型目标路径：${manualModelPath}` : undefined,
+        severity: 'info',
+      }));
     } else {
       resetStatus();
     }
@@ -323,6 +355,8 @@ const SpeechToTextPage: React.FC = () => {
     ensuringModel,
     error,
     isRecording,
+    manualModelMessage,
+    manualModelPath,
     modelProgress,
     modelReady,
     resetStatus,
@@ -340,6 +374,10 @@ const SpeechToTextPage: React.FC = () => {
       }
       if (status.ready) {
         setModelReady(true);
+        setManualModelMessage(null);
+        setManualModelPath(null);
+      } else if (status.model_path) {
+        setManualModelPath(status.model_path);
       }
     } catch (invokeError) {
       console.error(invokeError);
@@ -375,10 +413,25 @@ const SpeechToTextPage: React.FC = () => {
         if (payload.status === 'finished' || payload.status === 'exists') {
           setModelReady(true);
           setModelProgress(null);
+          setManualModelMessage(null);
+          setManualModelPath(null);
         } else if (payload.status === 'downloading') {
           setModelReady(false);
+          setManualModelMessage(null);
+          setManualModelPath(null);
+        } else if (payload.status === 'manual_copy_required') {
+          setModelReady(false);
+          setModelProgress(null);
+          setManualModelMessage(
+            payload.message ?? '当前版本未内置语音模型，请手动复制模型文件后重试。',
+          );
+          if (payload.model_path) {
+            setManualModelPath(payload.model_path);
+          }
         } else if (payload.status === 'failed') {
           setModelReady(false);
+          setManualModelMessage(null);
+          setManualModelPath(null);
           setError(payload.message ?? '模型下载失败，请检查网络后重试。');
         }
       });
@@ -696,6 +749,31 @@ const SpeechToTextPage: React.FC = () => {
 
       <Stack spacing={3}>
         <CardContainer>
+          {manualModelMessage && (
+            <Alert
+              severity="info"
+              sx={{
+                mb: 2,
+                borderRadius: 2,
+                alignItems: 'flex-start',
+              }}
+            >
+              {manualModelMessage}
+              {manualModelPath ? (
+                <Typography
+                  component="code"
+                  sx={{
+                    display: 'block',
+                    mt: 1,
+                    fontFamily: 'monospace',
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  {manualModelPath}
+                </Typography>
+              ) : null}
+            </Alert>
+          )}
           <RecorderControls
             language={language}
             onLanguageChange={setLanguage}
@@ -714,6 +792,8 @@ const SpeechToTextPage: React.FC = () => {
             onStopTranscription={handleCancelTranscription}
             transcriptionDuration={transcriptionDuration}
             lastTranscriptionDuration={lastTranscriptionDuration}
+            manualModelMessage={manualModelMessage}
+            manualModelPath={manualModelPath}
           />
         </CardContainer>
 

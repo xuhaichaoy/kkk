@@ -33,6 +33,7 @@ import {
   todosAtom,
 } from '../../stores/todoStore';
 import type { SpeechSession } from '../../types/speech';
+import { SPEECH_SUPPORTED } from '../../utils/platform';
 
 type LocalDataCategory = 'tasks' | 'excel' | 'speech' | 'other';
 
@@ -279,6 +280,11 @@ const LocalDataManagerDialog: React.FC<LocalDataManagerDialogProps> = ({
 
   const refreshSpeechSessions = React.useCallback(async () => {
     if (!open) return;
+    if (!SPEECH_SUPPORTED) {
+      setSpeechSessions([]);
+      setSpeechError('当前版本未启用语音识别功能。');
+      return;
+    }
     if (!isTauriEnvironment()) {
       setSpeechSessions([]);
       setSpeechError('当前环境暂不支持管理语音数据。');
@@ -308,8 +314,12 @@ const LocalDataManagerDialog: React.FC<LocalDataManagerDialogProps> = ({
 
   const handleChangeTab = React.useCallback(
     (_event: React.SyntheticEvent, value: LocalDataCategory) => {
+      if (value === 'speech' && !SPEECH_SUPPORTED) {
+        setActiveTab('tasks');
+        return;
+      }
       setActiveTab(value);
-      if (value === 'speech') {
+      if (value === 'speech' && SPEECH_SUPPORTED) {
         void refreshSpeechSessions();
       }
     },
@@ -734,6 +744,13 @@ const LocalDataManagerDialog: React.FC<LocalDataManagerDialogProps> = ({
 
   const handleDeleteSpeechSession = React.useCallback(
     async (session: SpeechSession) => {
+      if (!SPEECH_SUPPORTED) {
+        setFeedback({
+          type: 'error',
+          message: '当前版本未启用语音识别功能。',
+        });
+        return;
+      }
       if (!isTauriEnvironment()) {
         setFeedback({
           type: 'error',
@@ -755,22 +772,26 @@ const LocalDataManagerDialog: React.FC<LocalDataManagerDialogProps> = ({
           message: '删除语音记录失败，请稍后重试。',
         });
       } finally {
-        await refreshSpeechSessions();
+        if (SPEECH_SUPPORTED) {
+          await refreshSpeechSessions();
+        }
       }
     },
     [refreshSpeechSessions],
   );
 
   const categoryTabs: Array<{ value: LocalDataCategory; label: string; count?: number }> =
-    React.useMemo(
-      () => [
+    React.useMemo(() => {
+      const tabs: Array<{ value: LocalDataCategory; label: string; count?: number }> = [
         { value: 'tasks', label: '任务数据', count: localData.tasks.length },
         { value: 'excel', label: 'Excel 数据', count: localData.excel.length },
-        { value: 'speech', label: '语音记录', count: speechSessions.length },
-        { value: 'other', label: '其他数据', count: localData.other.length },
-      ],
-      [localData.excel.length, localData.other.length, localData.tasks.length, speechSessions.length],
-    );
+      ];
+      if (SPEECH_SUPPORTED) {
+        tabs.push({ value: 'speech', label: '语音记录', count: speechSessions.length });
+      }
+      tabs.push({ value: 'other', label: '其他数据', count: localData.other.length });
+      return tabs;
+    }, [localData.excel.length, localData.other.length, localData.tasks.length, speechSessions.length]);
 
   const renderLocalStorageEntries = (entries: LocalStorageEntry[]) => {
     if (!entries.length) {
@@ -1099,7 +1120,7 @@ const LocalDataManagerDialog: React.FC<LocalDataManagerDialogProps> = ({
             {activeTab === 'tasks' && renderLocalStorageEntries(localData.tasks)}
             {activeTab === 'excel' && renderLocalStorageEntries(localData.excel)}
             {activeTab === 'other' && renderLocalStorageEntries(localData.other)}
-            {activeTab === 'speech' && renderSpeechSessions()}
+            {SPEECH_SUPPORTED && activeTab === 'speech' && renderSpeechSessions()}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2.5 }}>
@@ -1109,7 +1130,9 @@ const LocalDataManagerDialog: React.FC<LocalDataManagerDialogProps> = ({
                 color="primary"
                 onClick={() => {
                   refreshLocalStorage();
-                  void refreshSpeechSessions();
+                  if (SPEECH_SUPPORTED) {
+                    void refreshSpeechSessions();
+                  }
                 }}
               >
                 <RefreshOutlinedIcon />

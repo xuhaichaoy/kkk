@@ -225,6 +225,14 @@ impl ModelStatusResponse {
             model_path: Some(path.to_string_lossy().into_owned()),
         }
     }
+
+    fn pending(path: &Path) -> Self {
+        Self {
+            ready: false,
+            downloaded: false,
+            model_path: Some(path.to_string_lossy().into_owned()),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -239,6 +247,7 @@ pub enum ModelStatusKind {
     Exists,
     Downloading,
     Finished,
+    ManualCopyRequired,
     Failed,
 }
 
@@ -334,6 +343,24 @@ impl SpeechManager {
             };
             let _ = app.emit(MODEL_STATUS_EVENT, finish_event);
             return Ok(ModelStatusResponse::ready(&self.model_path, false));
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            if !tauri::is_dev() {
+                let model_path_string = self.model_path.to_string_lossy().into_owned();
+                let message = format!(
+                    "Windows 版本未内置语音模型，请将 {} 复制到：{}",
+                    MODEL_FILENAME, model_path_string
+                );
+                let manual_event = ModelStatusEvent {
+                    status: ModelStatusKind::ManualCopyRequired,
+                    model_path: Some(model_path_string.clone()),
+                    message: Some(message),
+                };
+                let _ = app.emit(MODEL_STATUS_EVENT, manual_event);
+                return Ok(ModelStatusResponse::pending(&self.model_path));
+            }
         }
 
         let start_event = ModelStatusEvent {

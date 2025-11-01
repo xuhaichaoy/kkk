@@ -28,7 +28,7 @@ export interface ModelDownloadProgress {
 }
 
 export interface ModelStatusEvent {
-  status: 'exists' | 'downloading' | 'finished' | 'failed';
+  status: 'exists' | 'downloading' | 'finished' | 'manual_copy_required' | 'failed';
   model_path?: string | null;
   message?: string | null;
 }

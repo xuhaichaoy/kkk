@@ -47,6 +47,8 @@ export interface RecorderControlsProps {
   recordingDuration: number;
   transcriptionDuration: number;
   lastTranscriptionDuration: number | null;
+  manualModelMessage?: string | null;
+  manualModelPath?: string | null;
 }
 
 const RecorderControls: React.FC<RecorderControlsProps> = ({
@@ -67,6 +69,8 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
   recordingDuration,
   transcriptionDuration,
   lastTranscriptionDuration,
+  manualModelMessage,
+  manualModelPath,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -384,9 +388,28 @@ const RecorderControls: React.FC<RecorderControlsProps> = ({
         </Stack>
 
         {!modelReady && !isRecording && (
-          <Typography variant="caption" color="text.secondary" textAlign="center">
-            💡 模型下载完成后按钮会自动启用，请耐心等待
-          </Typography>
+          manualModelMessage ? (
+            <Stack spacing={0.5} alignItems="center">
+              <Typography variant="caption" color="text.secondary" textAlign="center">
+                {manualModelMessage}
+              </Typography>
+              {manualModelPath ? (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  textAlign="center"
+                  component="code"
+                  sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+                >
+                  {manualModelPath}
+                </Typography>
+              ) : null}
+            </Stack>
+          ) : (
+            <Typography variant="caption" color="text.secondary" textAlign="center">
+              💡 模型下载完成后按钮会自动启用，请耐心等待
+            </Typography>
+          )
         )}
 
         {transcribing && (

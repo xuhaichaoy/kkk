@@ -44,9 +44,6 @@
 			"providerShortName": null,
 			"signingIdentity": null
 		},
-	"resources": [
-		"resources/models/ggml-small.bin"
-	],
 		"shortDescription": "Kk",
 		"targets": ["deb", "appimage", "nsis", "app", "dmg"],
 		"licenseFile": "../LICENSE"

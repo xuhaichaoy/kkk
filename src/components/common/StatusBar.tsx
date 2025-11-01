@@ -31,16 +31,11 @@ interface StatusBarContextValue {
 
 const StatusBarContext = React.createContext<StatusBarContextValue | undefined>(undefined);
 
-const createDefaultStatus = (): StatusPayload => ({
-  message: '状态：已就绪',
-  severity: 'info',
-});
-
 export const StatusBarProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [status, setStatus] = React.useState<StatusPayload | null>(() => createDefaultStatus());
+  const [status, setStatus] = React.useState<StatusPayload | null>(null);
 
   const resetStatus = React.useCallback(() => {
-    setStatus(() => createDefaultStatus());
+    setStatus(null);
   }, []);
 
   const value = React.useMemo<StatusBarContextValue>(

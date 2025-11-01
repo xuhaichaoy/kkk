@@ -9,6 +9,7 @@ import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
 import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined';
 import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import { SPEECH_SUPPORTED } from '../../utils/platform';
 import { LocalDataManagerDialog } from '../common';
 import { StatusBarProvider } from '../common/StatusBar';
 
@@ -66,17 +67,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const routerState = useRouterState();
   const [dataManagerOpen, setDataManagerOpen] = React.useState(false);
 
-  const tabs = React.useMemo(
-    () => [
+  const tabs = React.useMemo(() => {
+    const items: Array<{ label: string; value: string; icon: typeof ChecklistRtlOutlinedIcon }> = [
       { label: '任务面板', value: '/' as const, icon: ChecklistRtlOutlinedIcon },
       { label: '任务日历', value: '/calendar' as const, icon: CalendarMonthOutlinedIcon },
       { label: '优先矩阵', value: '/matrix' as const, icon: ViewQuiltOutlinedIcon },
       { label: '时间投入概览', value: '/timeinvest' as const, icon: AccessTimeIcon },
       { label: 'Excel 工具', value: '/excel' as const, icon: GridOnOutlinedIcon },
-      { label: '语音识别', value: '/speech' as const, icon: GraphicEqOutlinedIcon },
-    ],
-    [],
-  );
+    ];
+    if (SPEECH_SUPPORTED) {
+      items.push({ label: '语音识别', value: '/speech' as const, icon: GraphicEqOutlinedIcon });
+    }
+    return items;
+  }, []);
 
   const currentPath = routerState.location.pathname;
   const currentTab = React.useMemo(() => {
